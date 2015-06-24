@@ -5,7 +5,8 @@ Renders O2Jam OJN/OJM to MP3/WAV/OGG music file
 - **Author Homepage**: http://djzmo.com
 - **Latest Version**: 0.8b
 
-** IMPORTANT: ** This project is no longer maintained. Use at your own risk.
+**IMPORTANT:**
+This project is no longer maintained. Use at your own risk.
 
 --------------------------------------------------------------------------------------------------
 
@@ -41,27 +42,32 @@ Released: June 2012
 
 ## Usage ##
 
-Usage: RenderOJN [inputfile [options]]
+Usage: ```RenderOJN [inputfile [options]]```
 
 Rendering Options:
 
+```
   --rendermode <mode>       Rendering Mode (quick, realtime). Default: quick
   --format <format>         Output Format (wav, mp3, ogg). Default: mp3
   --outfile <filename>      Output Filename. Default: <inputfile>.<format>
                             Whitespace is not allowed.
   --quality <quality>       Output Quality (for mp3 and ogg). Default: 3
                             3 - Best, 2 - Standard, 1 - Poor
+```
 
 Misc. Options:
 
+```
   --difficulty <difficulty> Note Difficulty (e, n, h). Default: h
   --play                    Play the music instead of generating an output file
   --help                    Display this text
+```
 
-Example: RenderOJN o2ma100.ojn --outfile BachAlive.mp3 --quality 2
-         RenderOJN o2ma100.ojn --rendermode realtime --format wav
-         RenderOJN o2ma100.ojn --play
-         RenderOJN --help
+Example:
+```RenderOJN o2ma100.ojn --outfile BachAlive.mp3 --quality 2```
+```RenderOJN o2ma100.ojn --rendermode realtime --format wav```
+```RenderOJN o2ma100.ojn --play```
+```RenderOJN --help```
 
 ## Dependencies ##
 
