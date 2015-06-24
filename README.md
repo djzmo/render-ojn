@@ -3,7 +3,7 @@ Renders O2Jam OJN/OJM to MP3/WAV/OGG music file
 
 - **Author**: Yana Nugraha
 - **Author Homepage**: http://djzmo.com
-- **Latest Version**: 0.8b
+- **Latest Version**: 0.8.2
 
 **IMPORTANT:**
 This project is no longer maintained. Use at your own risk.
@@ -19,6 +19,8 @@ arising from the use of this software.
 RenderOJN is a utility which is able to render an OJN file into PCM and encode to
 preferred audio file format.
 
+See it in action: https://www.youtube.com/watch?v=snYnd_IvmbM
+
 ## Usage Notes ##
 
 - In realtime mode, it is HIGHLY recommended to do nothing with your computer
@@ -27,7 +29,7 @@ preferred audio file format.
 
 ## Version History ##
 
-### v0.8 beta
+### v0.8.2
 Released: June 2012
 - Able to encode to OGG with automatic tagging.
 - Added output quality option.
@@ -36,7 +38,7 @@ Released: June 2012
 - Added progress percentage on time-consuming processes.
 - Fixed chopped music ending bug.
 
-### v0.8 alpha
+### v0.8.0
 - Able to encode to MP3 with automatic ID3 tagging.
 - Keysounded notes might or might not be rendered properly in quick mode.
 
@@ -64,9 +66,13 @@ Misc. Options:
 ```
 
 Example:
+
 ```RenderOJN o2ma100.ojn --outfile BachAlive.mp3 --quality 2```
+
 ```RenderOJN o2ma100.ojn --rendermode realtime --format wav```
+
 ```RenderOJN o2ma100.ojn --play```
+
 ```RenderOJN --help```
 
 ## Dependencies ##
