@@ -67,13 +67,12 @@ Misc. Options:
 
 Example:
 
-```RenderOJN o2ma100.ojn --outfile BachAlive.mp3 --quality 2
-
+```
+RenderOJN o2ma100.ojn --outfile BachAlive.mp3 --quality 2
 RenderOJN o2ma100.ojn --rendermode realtime --format wav
-
 RenderOJN o2ma100.ojn --play
-
-RenderOJN --help```
+RenderOJN --help
+```
 
 ## Dependencies ##
 
