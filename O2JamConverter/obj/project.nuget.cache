@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "dgSpecHash": "iT9OJgGzvczGf+OwC/2bHrlirCGHuBIQd2zg8lGAwjfSONVluL3bZSsye4Ck7xJEzUyuERRKykgeMwPRCGQGww==",
+  "success": true,
+  "projectFilePath": "/app/O2JamConverter/O2JamConverter.csproj",
+  "expectedPackageFiles": [
+    "/home/jules/.nuget/packages/commandlineparser/2.9.1/commandlineparser.2.9.1.nupkg.sha512",
+    "/home/jules/.nuget/packages/microsoft.netcore.platforms/3.1.0/microsoft.netcore.platforms.3.1.0.nupkg.sha512",
+    "/home/jules/.nuget/packages/microsoft.win32.registry/4.7.0/microsoft.win32.registry.4.7.0.nupkg.sha512",
+    "/home/jules/.nuget/packages/naudio/2.2.1/naudio.2.2.1.nupkg.sha512",
+    "/home/jules/.nuget/packages/naudio.asio/2.2.1/naudio.asio.2.2.1.nupkg.sha512",
+    "/home/jules/.nuget/packages/naudio.core/2.2.1/naudio.core.2.2.1.nupkg.sha512",
+    "/home/jules/.nuget/packages/naudio.midi/2.2.1/naudio.midi.2.2.1.nupkg.sha512",
+    "/home/jules/.nuget/packages/naudio.wasapi/2.2.1/naudio.wasapi.2.2.1.nupkg.sha512",
+    "/home/jules/.nuget/packages/naudio.winmm/2.2.1/naudio.winmm.2.2.1.nupkg.sha512",
+    "/home/jules/.nuget/packages/system.security.accesscontrol/4.7.0/system.security.accesscontrol.4.7.0.nupkg.sha512",
+    "/home/jules/.nuget/packages/system.security.principal.windows/4.7.0/system.security.principal.windows.4.7.0.nupkg.sha512",
+    "/home/jules/.nuget/packages/system.text.encoding.codepages/9.0.9/system.text.encoding.codepages.9.0.9.nupkg.sha512",
+    "/home/jules/.nuget/packages/taglibsharp/2.3.0/taglibsharp.2.3.0.nupkg.sha512"
+  ],
+  "logs": []
+}
