@@ -1,0 +1,28 @@
+# Shell scripts MUST keep LF even when checked out on Windows.  These run inside
+# Linux containers (cmake/build-manylinux2014.sh runs in the manylinux2014
+# image), where a CRLF line ending makes bash read `set -euo pipefail\r` and
+# abort with "set: pipefail: invalid option name".  With core.autocrlf=true and
+# no rule here, a Windows checkout reintroduces CRLF and the release build fails.
+*.sh text eol=lf
+
+# Windows-only scripts keep CRLF.
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Binary assets must never be line-ending converted.
+*.ojn binary
+*.ojm binary
+*.wav binary
+*.mp3 binary
+*.ogg binary
+*.png binary
+*.ico binary
+*.zip binary
+*.gz binary
+
+# NOTE: a repository-wide `* text=auto eol=lf` rule is deliberately NOT set here.
+# It would renormalize existing CRLF files (README.md, src/App.rc) on the next
+# checkout and bundle a whole-file line-ending rewrite into an unrelated commit.
+# If repo-wide LF normalization is wanted, add that rule and run
+# `git add --renormalize .` as its own dedicated commit.

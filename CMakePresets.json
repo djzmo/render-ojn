@@ -1,0 +1,87 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja Multi-Config",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_CXX_STANDARD": "17",
+        "CMAKE_CXX_STANDARD_REQUIRED": "ON",
+        "CMAKE_CXX_EXTENSIONS": "OFF",
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/triplets",
+        "RENDEROJN_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "windows-x64",
+      "inherits": "base",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+      "generator": "Visual Studio 17 2022",
+      "architecture": { "value": "x64", "strategy": "set" },
+      "cacheVariables": { "VCPKG_TARGET_TRIPLET": "x64-windows-static", "CMAKE_GENERATOR_TOOLSET": "v142", "RENDEROJN_PACKAGE_SUFFIX": "windows-x64" }
+    },
+    {
+      "name": "windows-x86-legacy",
+      "inherits": "base",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+      "generator": "Visual Studio 17 2022",
+      "architecture": { "value": "Win32", "strategy": "set" },
+      "cacheVariables": { "VCPKG_TARGET_TRIPLET": "x86-windows-static", "CMAKE_GENERATOR_TOOLSET": "v142", "RENDEROJN_PACKAGE_SUFFIX": "windows-x86-legacy" }
+    },
+    {
+      "name": "linux-x64",
+      "inherits": "base",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
+      "cacheVariables": { "VCPKG_TARGET_TRIPLET": "x64-linux-static", "RENDEROJN_PACKAGE_SUFFIX": "linux-x86_64-glibc2.17" }
+    },
+    {
+      "name": "linux-x64-manylinux2014",
+      "inherits": "linux-x64",
+      "binaryDir": "${sourceDir}/out/build/linux-x64-manylinux2014"
+    },
+    {
+      "name": "linux-x64-asan",
+      "inherits": "linux-x64",
+      "cacheVariables": { "RENDEROJN_ENABLE_SANITIZERS": "ON", "RENDEROJN_PACKAGE_SUFFIX": "linux-x86_64-glibc2.17" }
+    },
+    {
+      "name": "linux-x64-fuzz",
+      "inherits": "linux-x64",
+      "binaryDir": "${sourceDir}/out/build/linux-x64-fuzz",
+      "cacheVariables": { "CMAKE_CXX_COMPILER": "clang++", "RENDEROJN_BUILD_FUZZERS": "ON" }
+    },
+    {
+      "name": "macos-universal",
+      "inherits": "base",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" },
+      "cacheVariables": { "CMAKE_OSX_ARCHITECTURES": "x86_64;arm64", "CMAKE_OSX_DEPLOYMENT_TARGET": "10.15", "VCPKG_TARGET_TRIPLET": "universal-osx", "RENDEROJN_PACKAGE_SUFFIX": "macos-universal" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "windows-x64-debug", "configurePreset": "windows-x64", "configuration": "Debug" },
+    { "name": "windows-x64-release", "configurePreset": "windows-x64", "configuration": "Release" },
+    { "name": "windows-x86-legacy-debug", "configurePreset": "windows-x86-legacy", "configuration": "Debug" },
+    { "name": "windows-x86-legacy-release", "configurePreset": "windows-x86-legacy", "configuration": "Release" },
+    { "name": "linux-x64-debug", "configurePreset": "linux-x64", "configuration": "Debug" },
+    { "name": "linux-x64-release", "configurePreset": "linux-x64", "configuration": "Release" },
+    { "name": "linux-x64-manylinux2014-debug", "configurePreset": "linux-x64-manylinux2014", "configuration": "Debug" },
+    { "name": "linux-x64-manylinux2014-release", "configurePreset": "linux-x64-manylinux2014", "configuration": "Release" },
+    { "name": "linux-x64-asan-debug", "configurePreset": "linux-x64-asan", "configuration": "Debug" },
+    { "name": "linux-x64-asan-release", "configurePreset": "linux-x64-asan", "configuration": "Release" },
+    { "name": "linux-x64-fuzz-debug", "configurePreset": "linux-x64-fuzz", "configuration": "Debug" },
+    { "name": "macos-universal-debug", "configurePreset": "macos-universal", "configuration": "Debug" },
+    { "name": "macos-universal-release", "configurePreset": "macos-universal", "configuration": "Release" }
+  ],
+  "testPresets": [
+    { "name": "windows-x64-test", "configurePreset": "windows-x64", "configuration": "Debug", "output": { "outputOnFailure": true } },
+    { "name": "windows-x86-legacy-test", "configurePreset": "windows-x86-legacy", "configuration": "Debug", "output": { "outputOnFailure": true } },
+    { "name": "linux-x64-test", "configurePreset": "linux-x64", "configuration": "Debug", "output": { "outputOnFailure": true } },
+    { "name": "linux-x64-manylinux2014-test", "configurePreset": "linux-x64-manylinux2014", "configuration": "Debug", "output": { "outputOnFailure": true } },
+    { "name": "linux-x64-asan-test", "configurePreset": "linux-x64-asan", "configuration": "Debug", "output": { "outputOnFailure": true } },
+    { "name": "macos-universal-test", "configurePreset": "macos-universal", "configuration": "Debug", "output": { "outputOnFailure": true } }
+  ]
+}

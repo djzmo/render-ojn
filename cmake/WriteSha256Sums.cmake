@@ -1,0 +1,12 @@
+if(NOT DEFINED ARTIFACT_DIR)
+  message(FATAL_ERROR "ARTIFACT_DIR is required")
+endif()
+
+file(GLOB archives "${ARTIFACT_DIR}/RenderOJN-*.zip" "${ARTIFACT_DIR}/RenderOJN-*.tar.gz")
+set(lines "")
+foreach(archive IN LISTS archives)
+  file(SHA256 "${archive}" hash)
+  get_filename_component(name "${archive}" NAME)
+  string(APPEND lines "${hash}  ${name}\n")
+endforeach()
+file(WRITE "${ARTIFACT_DIR}/SHA256SUMS" "${lines}")
