@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(RenderOJN VERSION 1.0.0 LANGUAGES CXX)
+project(RenderOJN VERSION 1.0.1 LANGUAGES CXX)
 
 if(MSVC)
   # Release and Debug both use the supported static /MT runtime.  mp3lame's
