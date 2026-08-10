@@ -562,6 +562,24 @@ TEST_CASE("new wrapper decryption matches real corpus key parameters") {
     CHECK(static_cast<std::uint8_t>(raw[raw.size() - 6U] ^ 0xe1U) == plain->bytes()[5]);
 }
 
+TEST_CASE("normalizing an ordinary OJN twice is a no-op even when it starts with 'new'") {
+    using renderojn::format::Difficulty;
+
+    // song_id 0x77656E puts the bytes 'n','e','w' at offsets 0-2 of a perfectly
+    // ordinary chart. parse_ojn_chart normalizes and then hands the result to
+    // parse_ojn_header, which normalizes again, so without a signature-first
+    // check that chart would be decrypted a second time and rejected.
+    auto bytes = renderojn::test_fixture::ordinary_ojn()->bytes();
+    REQUIRE(bytes.size() > 8U);
+    bytes[0] = 'n'; bytes[1] = 'e'; bytes[2] = 'w'; bytes[3] = 0;
+    auto disguised = std::make_shared<renderojn::io::ByteBuffer>(std::move(bytes));
+
+    const auto normalized = renderojn::format::normalize_ojn(disguised);
+    CHECK(normalized->bytes() == disguised->bytes());
+    CHECK(renderojn::format::normalize_ojn(normalized)->bytes() == disguised->bytes());
+    CHECK_NOTHROW(renderojn::format::parse_ojn_chart(disguised, Difficulty::Hard));
+}
+
 TEST_CASE("malformed new wrappers fail instead of feeding garbage to the parser") {
     using renderojn::test_fixture::new_wrapped_ojn;
     using renderojn::test_fixture::ordinary_ojn;

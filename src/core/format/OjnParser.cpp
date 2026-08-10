@@ -155,6 +155,13 @@ std::shared_ptr<const io::ByteBuffer> decrypt_new_wrapper(const io::ByteBuffer& 
 std::shared_ptr<const io::ByteBuffer> normalize_ojn(std::shared_ptr<const io::ByteBuffer> source) {
     if (!source || source->size() < 4) malformed("truncated header");
     const auto* bytes = source->data();
+    // An ordinary OJN carries its signature at offset 4, so check that first.
+    // A decrypted chart whose song_id is 0x77656E begins with the bytes "new",
+    // and callers do re-normalize an already-normalized buffer (parse_ojn_chart
+    // hands its result to parse_ojn_header). Without this test such a chart
+    // would be decrypted a second time and then rejected, even though it is
+    // perfectly valid.
+    if (source->size() >= 8 && std::memcmp(bytes + 4, "ojn\0", 4) == 0) return source;
     if ((bytes[0] == 'n' || bytes[0] == 'N') && (bytes[1] == 'e' || bytes[1] == 'E') &&
         (bytes[2] == 'w' || bytes[2] == 'W')) {
         return decrypt_new_wrapper(*source);
