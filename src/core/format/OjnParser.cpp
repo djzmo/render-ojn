@@ -68,8 +68,9 @@ OjnHeader parse_header(io::ByteReader& input) {
     OjnHeader header;
     header.song_id = input.u32le("song id");
     if (input.u32le("signature") != kOjnSignature) {
-        throw Error(ExitCode::Runtime,
-                    "Unsupported OJN format: expected an ordinary legacy OJN; Korea-era 'new' wrappers are not supported by RenderOJN 1.0.0.");
+        // Reached only when the file is neither an ordinary OJN nor a `new`
+        // wrapper: normalize_ojn decrypts the latter before this runs.
+        throw Error(ExitCode::Runtime, "Unsupported OJN format: the file does not carry an 'ojn' signature.");
     }
     static_cast<void>(input.f32le("encryption version"));
     header.genre = input.u32le("genre");

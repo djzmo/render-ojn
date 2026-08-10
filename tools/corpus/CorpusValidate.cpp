@@ -1,9 +1,10 @@
 // Opt-in corpus validation harness.
 //
 // This is a private verification tool, not a public API and not an installed
-// target.  It inventories a real O2Jam corpus, parses every ordinary OJN at all
-// three difficulties, parses and decodes every sample package once, and
-// classifies Korea-era `new` wrappers as expected skips rather than failures.
+// target.  It inventories a real O2Jam corpus, parses every OJN at all three
+// difficulties -- ordinary and Korea-era `new` wrappers alike, since 1.0.1
+// decrypts the latter -- parses and decodes every sample package once, and
+// censuses the timing constructs each chart uses.
 //
 // It never mutates, copies, or packages any source asset; it only reads them
 // and writes a report to a caller-provided directory.
@@ -28,10 +29,6 @@ namespace {
 
 constexpr std::uint64_t kTwoGiB = 2ULL * 1024ULL * 1024ULL * 1024ULL;
 
-// The `new`-wrapper rejection is a documented 1.0.1 boundary, so it must be
-// recognized precisely rather than lumped in with genuine parse failures.
-constexpr const char* kNewWrapperMarker = "Korea-era 'new' wrappers";
-
 struct Options {
     std::vector<std::filesystem::path> roots;
     std::filesystem::path report_directory;
@@ -40,6 +37,9 @@ struct Options {
 
 struct Totals {
     std::size_t charts_ordinary{};
+    // Retained at zero since 1.0.1 decrypts `new` wrappers instead of skipping
+    // them.  The field stays in the report so a 1.0.0 report and a 1.0.1 report
+    // remain directly comparable rather than differing by a missing key.
     std::size_t charts_new_skipped{};
     std::size_t charts_failed{};
     std::size_t packages_parsed{};
@@ -318,13 +318,12 @@ void validate_chart(const std::string& id, const std::filesystem::path& file, Re
                           std::to_string(census.indivisible_subdivisions),
                       "");
     } catch (const renderojn::Error& error) {
+        // Every OJN in scope is now parseable, `new` wrappers included, so there
+        // is no expected-skip class left: any error here is a genuine failure.
+        // Matching on message text to reclassify one would also be fragile, since
+        // a malformed `new` wrapper reports through the same wording as a
+        // successfully rejected one.
         const std::string message = error.what();
-        if (message.find(kNewWrapperMarker) != std::string::npos) {
-            // Expected 1.0.1 boundary, not a failure.
-            ++totals.charts_new_skipped;
-            report.record(id, "chart_skipped_new", "OJN", "", message);
-            return;
-        }
         ++totals.charts_failed;
         ++totals.failure_reasons[message];
         report.record(id, "chart_failed", "OJN", "", message);
