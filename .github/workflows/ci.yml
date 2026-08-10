@@ -40,6 +40,12 @@ jobs:
       - uses: actions/checkout@v4
       - run: docker build -t renderojn-manylinux2014 -f cmake/Dockerfile.manylinux2014 .
       - run: docker run --rm -e CMAKE_BUILD_PARALLEL_LEVEL=2 -v "${{ github.workspace }}:/src" renderojn-manylinux2014 bash /src/cmake/build-manylinux2014.sh
+      # The container runs as root and writes its build trees into the mounted
+      # workspace, so out/ is left root-owned. Later steps run as the unprivileged
+      # runner user and cannot write there -- configuring the fuzz preset failed
+      # with "Unable to (re)create the private pkgRedirects directory". Hand the
+      # tree back before any non-root step touches it.
+      - run: sudo chown -R "$(id -u):$(id -g)" out
       - run: |
           cmake -E tar tf out/build/linux-x64-manylinux2014/RenderOJN-*-linux-x86_64-glibc2.17.tar.gz
           cat out/build/linux-x64-manylinux2014/SHA256SUMS
