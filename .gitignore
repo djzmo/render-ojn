@@ -1,0 +1,19 @@
+# Generated build and package outputs.
+/build/
+/out/
+/dist/
+/CMakeUserPresets.json
+
+# Opt-in, non-redistributable characterization material.
+/tests/fixtures/private/*
+!/tests/fixtures/private/README.md
+/tests/fixtures/legacy-captures/
+
+# Local editor and operating-system files.
+.vs/
+.vscode/
+*.user
+*.suo
+*.log
+*.obj
+*.pdb

@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  windows:
+    strategy:
+      matrix:
+        preset: [windows-x64, windows-x86-legacy]
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lukka/run-vcpkg@v11
+      - uses: ilammy/msvc-dev-cmd@v1
+      - run: cmake --preset ${{ matrix.preset }}
+      - run: cmake --build --preset ${{ matrix.preset }}-debug
+      - run: cmake --build --preset ${{ matrix.preset }}-release
+      - run: ctest --preset ${{ matrix.preset }}-test
+      - if: matrix.preset == 'windows-x64'
+        run: cmake --build out/build/windows-x64 --target renderojn_package --config Release
+      - if: matrix.preset == 'windows-x64'
+        run: |
+          $archive = Get-ChildItem out/build/windows-x64/RenderOJN-1.0.0-windows-x64.zip | Select-Object -First 1
+          cmake -E tar tf $archive.FullName
+          Get-Content out/build/windows-x64/SHA256SUMS
+      - if: matrix.preset == 'windows-x64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: RenderOJN-1.0.0-windows-x64
+          path: out/build/windows-x64/RenderOJN-1.0.0-windows-x64.zip
+
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t renderojn-manylinux2014 -f cmake/Dockerfile.manylinux2014 .
+      - run: docker run --rm -e CMAKE_BUILD_PARALLEL_LEVEL=2 -v "${{ github.workspace }}:/src" renderojn-manylinux2014 bash /src/cmake/build-manylinux2014.sh
+      - run: |
+          cmake -E tar tf out/build/linux-x64-manylinux2014/RenderOJN-1.0.0-linux-x86_64-glibc2.17.tar.gz
+          cat out/build/linux-x64-manylinux2014/SHA256SUMS
+      - uses: lukka/run-vcpkg@v11
+      - run: sudo apt-get update && sudo apt-get install -y clang
+      - run: cmake --preset linux-x64-fuzz
+      - run: cmake --build --preset linux-x64-fuzz-debug --target renderojn_fuzz_ojn renderojn_fuzz_ojm
+      - run: out/build/linux-x64-fuzz/Debug/renderojn_fuzz_ojn -runs=1000 fuzz/corpus/ojn
+      - run: out/build/linux-x64-fuzz/Debug/renderojn_fuzz_ojm -runs=1000 fuzz/corpus/ojm
+
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lukka/run-vcpkg@v11
+      - run: cmake --preset macos-universal
+      - run: cmake --build --preset macos-universal-debug
+      - run: cmake --build --preset macos-universal-release
+      - run: ctest --preset macos-universal-test
+      - run: cmake --build out/build/macos-universal --target renderojn_package --config Release
+      - run: |
+          lipo -archs out/build/macos-universal/Release/RenderOJN
+          cmake -E tar tf out/build/macos-universal/RenderOJN-1.0.0-macos-universal.zip
+          cat out/build/macos-universal/SHA256SUMS

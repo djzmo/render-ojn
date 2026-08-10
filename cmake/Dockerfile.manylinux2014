@@ -1,0 +1,19 @@
+FROM quay.io/pypa/manylinux2014_x86_64
+
+# Keep the release compiler inside the manylinux2014/glibc-2.17 image.  The
+# official CMake and Ninja binaries are tools only; they are not distributed.
+ARG CMAKE_VERSION=4.4.0
+ARG NINJA_VERSION=1.13.2
+RUN yum -y install curl devtoolset-10-libasan-devel devtoolset-10-libubsan-devel git make tar unzip which zip && yum clean all && \
+    curl -fsSL "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz" | \
+      tar -xz -C /opt && \
+    ln -sf "/opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/cmake" /usr/local/bin/cmake && \
+    curl -fsSL "https://github.com/ninja-build/ninja/archive/refs/tags/v${NINJA_VERSION}.tar.gz" | tar -xz -C /tmp && \
+    cd "/tmp/ninja-${NINJA_VERSION}" && /opt/python/cp39-cp39/bin/python3 configure.py --bootstrap && \
+    install -m 0755 ninja /usr/local/bin/ninja && \
+    rm -rf "/tmp/ninja-${NINJA_VERSION}"
+
+# manylinux2014 supplies GCC 10 through devtoolset-10, which has complete
+# C++17 support while retaining the required glibc baseline.
+ENV PATH=/opt/rh/devtoolset-10/root/usr/bin:${PATH}
+ENV LD_LIBRARY_PATH=/opt/rh/devtoolset-10/root/usr/lib64
