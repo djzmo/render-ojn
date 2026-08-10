@@ -1,0 +1,6 @@
+#pragma once
+
+namespace renderojn::app::version {
+inline constexpr char kVersion[] = "@PROJECT_VERSION@";
+inline constexpr char kProjectUrl[] = "https://github.com/djzmo/render-ojn";
+} // namespace renderojn::app::version
