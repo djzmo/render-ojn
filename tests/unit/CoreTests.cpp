@@ -524,15 +524,42 @@ TEST_CASE("Korea-era new wrappers decrypt to the ordinary chart they contain") {
 }
 
 TEST_CASE("new wrapper decryption covers every block size the corpus uses") {
-    // Real files use block sizes 4 through 11, and the mid-key lands at
-    // blockSize/2, so an off-by-one in that index would corrupt only some
-    // sizes. Cover the whole observed range plus the boundary value 1.
-    for (std::uint8_t block_size = 1; block_size <= 12U; ++block_size) {
+    // Real files use block sizes 4 through 11 and the mid-key lands at
+    // blockSize/2, so an off-by-one in that index would corrupt only some sizes.
+    // Cover the observed range with a margin on either side.
+    //
+    // Sizes 1 and 2 are deliberately excluded. At size 1 the mid-key overwrites
+    // the initial key and at size 2 it lands on index 1, so the fixture and the
+    // parser would agree with each other by construction rather than against the
+    // format. No corpus file uses a block size below 4, so such a test would
+    // assert self-consistency and prove nothing.
+    for (std::uint8_t block_size = 3; block_size <= 12U; ++block_size) {
         const auto plain = renderojn::test_fixture::ordinary_ojn();
         const auto wrapped = renderojn::test_fixture::new_wrapped_ojn(plain, block_size);
         const auto normalized = renderojn::format::normalize_ojn(wrapped);
         CHECK(normalized->bytes() == plain->bytes());
     }
+}
+
+TEST_CASE("new wrapper decryption matches real corpus key parameters") {
+    // Guards the key layout against the actual observed parameters rather than
+    // against the fixture's mirror of the implementation: block size 11 with
+    // main 0x46, mid 0xe1 and initial 0x85 are the values carried by a real
+    // NOWCOM chart. Byte 0 must come from the initial key, and byte 5 from the
+    // mid key because 11 / 2 == 5.
+    const auto plain = renderojn::test_fixture::ordinary_ojn();
+    const auto wrapped = renderojn::test_fixture::new_wrapped_ojn(plain, 11U, 0x46U, 0xe1U, 0x85U);
+    const auto& raw = wrapped->bytes();
+
+    REQUIRE(raw.size() > 8U);
+    CHECK(raw[3] == 11U);
+    CHECK(raw[4] == 0x46U);
+    CHECK(raw[5] == 0xe1U);
+    CHECK(raw[6] == 0x85U);
+
+    // Decrypting by hand, independent of the parser.
+    CHECK(static_cast<std::uint8_t>(raw[raw.size() - 1U] ^ 0x85U) == plain->bytes()[0]);
+    CHECK(static_cast<std::uint8_t>(raw[raw.size() - 6U] ^ 0xe1U) == plain->bytes()[5]);
 }
 
 TEST_CASE("malformed new wrappers fail instead of feeding garbage to the parser") {
