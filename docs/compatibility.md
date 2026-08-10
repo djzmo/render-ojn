@@ -75,6 +75,10 @@ fractions and 400 charts carry 21,460 channel-1 tempo events. No chart uses a
 subdivision that does not divide 192. The 1.0.0 figures were lower (19 and 186
 charts) only because the `new`-wrapped charts could not be read at the time.
 
+Rendering the whole corpus at hard difficulty produces audio for 957 of the 958
+charts. The one exception is `o2ma848.ojn`, whose sample package is malformed;
+both it and the two deliberately silent tutorial charts are described below.
+
 Note that the same chart id recurs across installations, so identical filenames
 under different roots must be kept distinct when reporting per-case results.
 
