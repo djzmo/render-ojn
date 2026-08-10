@@ -3,7 +3,7 @@ Renders O2Jam OJN/OJM to MP3/WAV/OGG music file
 
 - **Author**: Yana Nugraha
 - **Author Homepage**: http://djzmo.com
-- **Latest Version**: 1.0.0
+- **Latest Version**: 1.0.1
 
 --------------------------------------------------------------------------------------------------
 
@@ -26,6 +26,11 @@ See it in action: https://www.youtube.com/watch?v=snYnd_IvmbM
   keysounded music no longer loses timing accuracy the way it did before v1.0.0.
 
 ## Version History ##
+
+### v1.0.1
+- Supports Korea-era encrypted `new` OJN wrappers, which previously could not
+  be opened at all. They are decrypted transparently, so no extra option is
+  needed.
 
 ### v1.0.0
 - Rewritten on CMake and vcpkg; FMOD and Boost are no longer used.
@@ -93,14 +98,16 @@ unsupported encoded samples fail explicitly rather than being silently skipped.
 
 ## Compatibility ##
 
-Supports ordinary OJN wrappers and M30 packages using flag 0 (plaintext), flag
-16 (`nami`), or flag 32 (plaintext), with bounded OMC/OJM parsing. Every M30
-payload must decode to a nonempty Ogg stream, and only codec codes 0 and 5 are
-accepted. Flags 0 and 16 are corpus-proven; no real flag-32 package was found,
-so that variant rests on the CXO2 implementation and synthetic tests instead.
+Supports ordinary OJN wrappers, Korea-era encrypted `new` wrappers, and M30
+packages using flag 0 (plaintext), flag 16 (`nami`), or flag 32 (plaintext),
+with bounded OMC/OJM parsing. Every M30 payload must decode to a nonempty Ogg
+stream, and only codec codes 0 and 5 are accepted. Flags 0 and 16 are
+corpus-proven; no real flag-32 package was found, so that variant rests on the
+CXO2 implementation and synthetic tests instead.
 
-Korea-era `new` wrappers are rejected with an actionable unsupported-format
-error. They are intentionally left to a later release.
+`new` wrappers are decrypted transparently — you pass the file exactly as you
+would an ordinary one. All 958 charts across three retail installations parse,
+decode, and render.
 
 Both rendering modes use deterministic float32 stereo mixing at 48 kHz, a
 100-voice cap, note type-3 skip, and note-type-4 `RefID + 1000` mapping. Quick

@@ -291,11 +291,16 @@ void validate_chart(const std::string& id, const std::filesystem::path& file, Re
         }
         ++totals.charts_ordinary;
 
-        // Census the raw timing constructs across all three chart sections.
-        const auto header = renderojn::format::parse_ojn_header(buffer);
+        // Census the raw timing constructs across all three chart sections.  This
+        // must read the NORMALIZED buffer: a Korea-era `new` wrapper is still
+        // encrypted in `buffer`, while the header offsets below come from the
+        // decrypted stream, so censusing the raw bytes would walk ciphertext and
+        // report meaningless counts.
+        const auto normalized = renderojn::format::normalize_ojn(buffer);
+        const auto header = renderojn::format::parse_ojn_header(normalized);
         TimingCensus census;
         for (std::size_t index = 0; index < 3; ++index) {
-            const auto section = census_timing_events(buffer->bytes(), header.chart_offsets[index],
+            const auto section = census_timing_events(normalized->bytes(), header.chart_offsets[index],
                                                       header.chart_offsets[index + 1]);
             census.measure_fractions += section.measure_fractions;
             census.tempo_events += section.tempo_events;

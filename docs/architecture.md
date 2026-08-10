@@ -28,9 +28,18 @@ integrates BPM chronologically, and rounds the resulting seconds once to
 quick mode uses those frames for exact intra-block placement while realtime
 retains its 48-frame scheduling behavior.
 
-The OJN normalizer is intentionally a separate seam.  1.0.0 only admits the
-ordinary legacy wrapper and returns a specific unsupported-format diagnostic for
-Korea-era `new` wrappers; it does not claim 1.0.1 decryption compatibility.
+The OJN normalizer is intentionally a separate seam, and it is where Korea-era
+`new` wrappers are handled.  A `new` file holds an ordinary OJN behind a byte
+reversal and a repeating XOR key whose parameters are stored in the wrapper's
+own 8-byte header: block size, then the main, mid, and initial key bytes.  The
+normalizer rebuilds that key, decrypts the payload backwards from the end of the
+file, and requires the result to carry the `ojn\0` signature before returning
+it.  Everything downstream therefore sees an ordinary buffer and needs no
+knowledge of the container.
+
+Requiring the signature matters: a wrong key produces plausible-looking bytes
+rather than an obvious failure, so without that check a mis-keyed file would be
+parsed as though it had decrypted correctly.
 
 Compatibility profiles run only after both immutable inputs and the parsed
 timeline are available. A profile is keyed by both complete SHA-256 digests,

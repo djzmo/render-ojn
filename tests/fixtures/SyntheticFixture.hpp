@@ -147,6 +147,37 @@ inline std::shared_ptr<const io::ByteBuffer> ordinary_ojn() {
     return ordinary_ojn(spec);
 }
 
+// Wraps an ordinary OJN in the Korea-era `new` container.  This is the inverse
+// of the parser's decryption, so a fixture built here and then parsed exercises
+// a genuine round trip rather than a restatement of the implementation: the
+// payload is XORed against a blockSize-long key and written back to front,
+// behind an 8-byte header carrying the key parameters.
+inline std::shared_ptr<const io::ByteBuffer> new_wrapped_ojn(std::shared_ptr<const io::ByteBuffer> plain,
+                                                             std::uint8_t block_size = 11,
+                                                             std::uint8_t main_key = 0x46U,
+                                                             std::uint8_t mid_key = 0xe1U,
+                                                             std::uint8_t initial_key = 0x85U) {
+    const auto& source = plain->bytes();
+    std::vector<std::uint8_t> key(block_size == 0 ? std::size_t{1} : block_size, main_key);
+    if (block_size != 0) {
+        key[0] = initial_key;
+        key[static_cast<std::size_t>(block_size) / 2U] = mid_key;
+    }
+    std::vector<std::uint8_t> bytes;
+    bytes.reserve(source.size() + 8U);
+    bytes.push_back('n'); bytes.push_back('e'); bytes.push_back('w');
+    bytes.push_back(block_size); bytes.push_back(main_key); bytes.push_back(mid_key); bytes.push_back(initial_key);
+    bytes.push_back(0);
+    // The payload occupies bytes [8, size) and is read backwards from the very
+    // end during decryption, so emit it reversed here.
+    bytes.resize(source.size() + 8U);
+    for (std::size_t offset = 0; offset < source.size(); ++offset) {
+        const auto encrypted = static_cast<std::uint8_t>(source[offset] ^ key[block_size == 0 ? 0U : offset % block_size]);
+        bytes[(bytes.size() - 1U) - offset] = encrypted;
+    }
+    return std::make_shared<io::ByteBuffer>(std::move(bytes));
+}
+
 inline std::vector<std::uint8_t> riff_bytes() {
     return {static_cast<std::uint8_t>('r'), static_cast<std::uint8_t>('i'), static_cast<std::uint8_t>('f'), static_cast<std::uint8_t>('f')};
 }

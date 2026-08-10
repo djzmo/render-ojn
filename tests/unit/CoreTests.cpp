@@ -498,11 +498,63 @@ TEST_CASE("output length covers notes past the declared duration") {
     CHECK(renderojn::render::output_frame_count(chart) > chart.notes.front().frame);
 }
 
-TEST_CASE("new OJN wrappers and truncated headers fail explicitly") {
-    auto wrapper = std::make_shared<renderojn::io::ByteBuffer>(std::vector<std::uint8_t>{'n', 'e', 'w', 0});
-    CHECK_THROWS_AS(renderojn::format::normalize_ojn(wrapper), renderojn::Error);
+TEST_CASE("truncated OJN headers fail explicitly") {
     auto truncated = std::make_shared<renderojn::io::ByteBuffer>(std::vector<std::uint8_t>(299));
     CHECK_THROWS_AS(renderojn::format::parse_ojn_header(truncated), renderojn::Error);
+}
+
+TEST_CASE("Korea-era new wrappers decrypt to the ordinary chart they contain") {
+    using renderojn::format::Difficulty;
+
+    // Round trip: the fixture encrypts, the parser decrypts. The decrypted chart
+    // must be indistinguishable from the plain one it was built from.
+    const auto plain = renderojn::test_fixture::ordinary_ojn();
+    const auto wrapped = renderojn::test_fixture::new_wrapped_ojn(plain);
+    REQUIRE(wrapped->size() == plain->size() + 8U);
+
+    const auto normalized = renderojn::format::normalize_ojn(wrapped);
+    CHECK(normalized->bytes() == plain->bytes());
+
+    const auto expected = renderojn::format::parse_ojn_chart(plain, Difficulty::Hard);
+    const auto actual = renderojn::format::parse_ojn_chart(wrapped, Difficulty::Hard);
+    CHECK(actual.header.song_id == expected.header.song_id);
+    CHECK(actual.header.title == expected.header.title);
+    REQUIRE(actual.notes.size() == expected.notes.size());
+    CHECK(actual.notes.front().frame == expected.notes.front().frame);
+}
+
+TEST_CASE("new wrapper decryption covers every block size the corpus uses") {
+    // Real files use block sizes 4 through 11, and the mid-key lands at
+    // blockSize/2, so an off-by-one in that index would corrupt only some
+    // sizes. Cover the whole observed range plus the boundary value 1.
+    for (std::uint8_t block_size = 1; block_size <= 12U; ++block_size) {
+        const auto plain = renderojn::test_fixture::ordinary_ojn();
+        const auto wrapped = renderojn::test_fixture::new_wrapped_ojn(plain, block_size);
+        const auto normalized = renderojn::format::normalize_ojn(wrapped);
+        CHECK(normalized->bytes() == plain->bytes());
+    }
+}
+
+TEST_CASE("malformed new wrappers fail instead of feeding garbage to the parser") {
+    using renderojn::test_fixture::new_wrapped_ojn;
+    using renderojn::test_fixture::ordinary_ojn;
+
+    // A zero block size would divide by zero / index an empty key.
+    auto zero_block = new_wrapped_ojn(ordinary_ojn(), 0U);
+    CHECK_THROWS_AS(renderojn::format::normalize_ojn(zero_block), renderojn::Error);
+
+    // Too short to carry the 8-byte key header.
+    auto stub = std::make_shared<renderojn::io::ByteBuffer>(std::vector<std::uint8_t>{'n', 'e', 'w', 11});
+    CHECK_THROWS_AS(renderojn::format::normalize_ojn(stub), renderojn::Error);
+
+    // Correct container, wrong key: the decrypted bytes are not an OJN, and that
+    // must be rejected rather than parsed as though the key had worked.
+    const auto plain = ordinary_ojn();
+    auto wrong_key = new_wrapped_ojn(plain, 11U, 0x46U, 0xe1U, 0x85U);
+    auto corrupted = wrong_key->bytes();
+    corrupted[4] = static_cast<std::uint8_t>(corrupted[4] ^ 0xffU); // flip mainKey
+    auto mismatched = std::make_shared<renderojn::io::ByteBuffer>(std::move(corrupted));
+    CHECK_THROWS_AS(renderojn::format::normalize_ojn(mismatched), renderojn::Error);
 }
 
 TEST_CASE("every ordinary OJN header truncation boundary fails") {

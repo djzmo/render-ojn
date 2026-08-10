@@ -47,19 +47,33 @@ unmodified. **No flag-32 package appears anywhere in that corpus**, so flag 32
 is supported as a plaintext variant on CXO2 source agreement plus synthetic
 tests only; it is deliberately untested against real data.
 
-Korea-era encrypted `new` OJN wrappers are rejected explicitly and remain 1.0.1
-scope. Any nonempty encoded sample that libsndfile cannot decode fails the run;
+Korea-era encrypted `new` OJN wrappers are supported as of 1.0.1. The container
+holds an ordinary OJN behind a byte reversal and a repeating XOR key, with the
+block size and the main, mid, and initial key bytes carried in the wrapper's own
+8-byte header, so no key material is external to the file. The decrypted result
+must carry the `ojn\0` signature or the file is rejected; a wrong key yields
+plausible-looking bytes rather than an obvious failure, so that check is what
+separates a genuine decrypt from garbage. Every one of the 494 `new` wrappers in
+the reference corpus decrypts to a valid ordinary OJN, across the eight block
+sizes those files use (4 through 11).
+
+Any nonempty encoded sample that libsndfile cannot decode fails the run;
 samples are never silently omitted.
 
 ## Reference corpus
 
 The claims above were measured against three retail installations: O2Jam
-(130 charts), O2Jam Thai (100), and NOWCOM O2Jam (728). That is 958 charts and
-980 sample packages, of which 464 are ordinary OJN charts in 1.0.0 scope and
-494 are Korea-era `new` wrappers recorded as expected skips rather than
-failures. Package kinds are 605 M30 flag 0, 346 M30 flag 16, 13 OJM and 15 OMC.
-All 464 ordinary charts parse, decode, and render; every `new` wrapper is
-skipped for the documented reason.
+(130 charts), O2Jam Thai (100), and NOWCOM O2Jam (728) — 958 charts and 980
+sample packages. 464 are ordinary OJN charts and 494 are Korea-era `new`
+wrappers; as of 1.0.1 both are in scope, and all 958 parse, decode, and render.
+Package kinds are 605 M30 flag 0, 346 M30 flag 16, 13 OJM and 15 OMC. Every
+`new` wrapper pairs with a package kind that was already supported, so
+decryption alone brought those charts into range.
+
+Timing constructs across all 958 charts: 35 charts carry 325 channel-0 measure
+fractions and 400 charts carry 21,460 channel-1 tempo events. No chart uses a
+subdivision that does not divide 192. The 1.0.0 figures were lower (19 and 186
+charts) only because the `new`-wrapped charts could not be read at the time.
 
 Note that the same chart id recurs across installations, so identical filenames
 under different roots must be kept distinct when reporting per-case results.

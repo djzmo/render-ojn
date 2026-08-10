@@ -114,14 +114,49 @@ OjnHeader parse_header(io::ByteReader& input) {
 
 } // namespace
 
+namespace {
+
+constexpr std::size_t kNewWrapperHeaderSize = 8;
+
+// Korea-era `new` wrappers hold an ordinary OJN behind a byte reversal and a
+// repeating XOR key.  Every key parameter is stored in the wrapper's own header:
+// the block size at offset 3, then the main, mid, and initial key bytes.  The
+// key is `block_size` copies of the main byte with the first replaced by the
+// initial byte and the middle by the mid byte; the payload after the 8-byte
+// header is read backwards from the end of the file and XORed against it.
+std::shared_ptr<const io::ByteBuffer> decrypt_new_wrapper(const io::ByteBuffer& source) {
+    const auto total = source.size();
+    if (total <= kNewWrapperHeaderSize) malformed("truncated Korea-era 'new' wrapper header");
+    const auto* bytes = source.data();
+    const std::size_t block_size = bytes[3];
+    if (block_size == 0) malformed("Korea-era 'new' wrapper declares a zero block size");
+
+    std::vector<std::uint8_t> key(block_size, bytes[4]);
+    key[0] = bytes[6];
+    key[block_size / 2U] = bytes[5];
+
+    const auto payload_size = total - kNewWrapperHeaderSize;
+    std::vector<std::uint8_t> decrypted(payload_size);
+    for (std::size_t offset = 0; offset < payload_size; ++offset) {
+        decrypted[offset] = static_cast<std::uint8_t>(bytes[(total - 1U) - offset] ^ key[offset % block_size]);
+    }
+
+    // A wrong key yields plausible-looking bytes, so require the decrypted
+    // result to actually be an OJN rather than handing garbage to the parser.
+    if (decrypted.size() < 8 || std::memcmp(decrypted.data() + 4, "ojn\0", 4) != 0) {
+        malformed("Korea-era 'new' wrapper did not decrypt to an ordinary OJN");
+    }
+    return std::make_shared<io::ByteBuffer>(std::move(decrypted));
+}
+
+} // namespace
+
 std::shared_ptr<const io::ByteBuffer> normalize_ojn(std::shared_ptr<const io::ByteBuffer> source) {
     if (!source || source->size() < 4) malformed("truncated header");
     const auto* bytes = source->data();
     if ((bytes[0] == 'n' || bytes[0] == 'N') && (bytes[1] == 'e' || bytes[1] == 'E') &&
         (bytes[2] == 'w' || bytes[2] == 'W')) {
-        throw Error(ExitCode::Runtime,
-                    "Unsupported OJN format: Korea-era 'new' wrappers are not supported by RenderOJN 1.0.0; "
-                    "use a legacy ordinary OJN or wait for 1.0.1 compatibility support.");
+        return decrypt_new_wrapper(*source);
     }
     return source;
 }
