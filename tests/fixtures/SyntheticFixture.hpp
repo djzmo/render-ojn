@@ -163,14 +163,13 @@ inline std::shared_ptr<const io::ByteBuffer> new_wrapped_ojn(std::shared_ptr<con
         key[0] = initial_key;
         key[static_cast<std::size_t>(block_size) / 2U] = mid_key;
     }
-    std::vector<std::uint8_t> bytes;
-    bytes.reserve(source.size() + 8U);
-    bytes.push_back('n'); bytes.push_back('e'); bytes.push_back('w');
-    bytes.push_back(block_size); bytes.push_back(main_key); bytes.push_back(mid_key); bytes.push_back(initial_key);
-    bytes.push_back(0);
+    // Byte 7 is unused by the format -- real files carry arbitrary values there
+    // and both this fixture and the parser ignore it, matching CXO2.
+    std::vector<std::uint8_t> bytes(source.size() + 8U);
+    bytes[0] = 'n'; bytes[1] = 'e'; bytes[2] = 'w';
+    bytes[3] = block_size; bytes[4] = main_key; bytes[5] = mid_key; bytes[6] = initial_key;
     // The payload occupies bytes [8, size) and is read backwards from the very
     // end during decryption, so emit it reversed here.
-    bytes.resize(source.size() + 8U);
     for (std::size_t offset = 0; offset < source.size(); ++offset) {
         const auto encrypted = static_cast<std::uint8_t>(source[offset] ^ key[block_size == 0 ? 0U : offset % block_size]);
         bytes[(bytes.size() - 1U) - offset] = encrypted;
