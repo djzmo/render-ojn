@@ -10,6 +10,12 @@
 *.cmd text eol=crlf
 *.bat text eol=crlf
 
+# Fuzz corpus seeds are raw parser input.  Most are hash-named and therefore have
+# no extension for the rules below to match, so cover the whole tree: a seed whose
+# bytes are line-ending converted no longer reproduces the input that found the
+# bug it was saved for.
+fuzz/corpus/** binary
+
 # Binary assets must never be line-ending converted.
 *.ojn binary
 *.ojm binary
