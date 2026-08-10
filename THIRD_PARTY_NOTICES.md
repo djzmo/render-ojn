@@ -1,6 +1,6 @@
 # Third-party notices
 
-RenderOJN 1.0.0 links to the following dependencies when the corresponding
+RenderOJN links to the following dependencies when the corresponding
 output or playback feature is enabled.  Distribution packages must include the
 license notices supplied by the selected vcpkg triplet.
 
@@ -12,5 +12,5 @@ license notices supplied by the selected vcpkg triplet.
 | miniaudio | playback | MIT-0 |
 | Catch2 | tests only | BSL-1.0 |
 
-No FMOD binaries or legacy runtime DLLs are included in RenderOJN 1.0.0
+No FMOD binaries or legacy runtime DLLs are included in RenderOJN
 archives.

@@ -1,6 +1,6 @@
 # Compatibility baseline
 
-RenderOJN 1.0.0 preserves the legacy CLI defaults and note mapping for ordinary
+RenderOJN preserves the legacy CLI defaults and note mapping for ordinary
 OJN inputs.  It renders in float32 stereo at 48 kHz, ignores legacy chart
 volume/pan, skips note type 3, and resolves note type 4 as `RefID + 1000`.
 
@@ -21,9 +21,9 @@ Supported package baseline: M30 flags 0, 16, and 32 plus bounded OMC/OJM record
 parsing. OJN source subdivisions are exact, nonzero channel-0 measure fractions
 and channel-1 BPM changes are normalized before frame conversion, and all
 declared OJN event/note/measure/package counts are validated. Both timing
-constructs occur in real charts: across the 958-chart corpus, 19 charts carry
-237 channel-0 measure fractions (values 0.25/0.5/0.75, i.e. 1/4, 2/4 and 3/4
-measures against 4/4) and 186 charts carry 9,122 channel-1 tempo events. No
+constructs occur in real charts: across the 958-chart corpus, 35 charts carry
+325 channel-0 measure fractions (values 0.25/0.5/0.75, i.e. 1/4, 2/4 and 3/4
+measures against 4/4) and 400 charts carry 21,460 channel-1 tempo events. No
 real chart uses a subdivision that does not divide 192. Encrypted OMC PCM
 samples use the format's 17-block rearrangement followed by ACCXOR decoding;
 OJM PCM samples remain plaintext. Empty PCM and Ogg directory slots retain
@@ -96,8 +96,12 @@ in the corpus use the opposite convention; relaxing either check to accommodate
 one specimen would mean trusting corrupt count fields everywhere else. Both
 conventions do coexist legitimately in this format — OMC validates against
 total file size while M30 validates against payload size — which is the likely
-origin of the discrepancy. The file blocks no supported content: its chart is
-itself a `new` wrapper and therefore out of 1.0.0 scope.
+origin of the discrepancy. As of 1.0.1 this is the single chart in the corpus
+that cannot be rendered: its `new`-wrapped chart now decrypts and parses
+normally, so the malformed package is the only thing standing in the way, where
+under 1.0.0 the chart was out of scope anyway. Accepting the file would still
+mean trusting corrupt counts across the other 951 packages, so it remains
+rejected.
 
 `o2ma283.ojm` needs the single-page Ogg checksum repair described below, and is
 the only package in the corpus that does.

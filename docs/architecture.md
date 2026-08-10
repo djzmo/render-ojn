@@ -1,4 +1,4 @@
-# RenderOJN 1.0.0 architecture
+# RenderOJN architecture
 
 `RenderOJN` is the only public API.  The executable orchestrates the internal
 static `renderojn_core` layers:

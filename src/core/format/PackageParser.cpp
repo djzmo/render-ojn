@@ -143,7 +143,7 @@ M30Encoding m30_encoding_for(std::uint32_t flag) {
     default:
         throw Error(ExitCode::Runtime,
                     "Unsupported sample-package encoding: M30 flag " + std::to_string(flag) +
-                    " is not supported by RenderOJN 1.0.0 (supported flags are 0, 16/nami, and 32).");
+                    " is not supported (supported flags are 0, 16/nami, and 32).");
     }
 }
 
@@ -185,7 +185,7 @@ Package parse_m30(io::ByteReader input) {
         if (codec_code != 0U && codec_code != 5U) {
             throw Error(ExitCode::Runtime,
                         "Unsupported sample-package encoding: M30 codec " + std::to_string(codec_code) +
-                        " is not supported by RenderOJN 1.0.0 (supported codec codes are 0/background and 5/normal).");
+                        " is not supported (supported codec codes are 0/background and 5/normal).");
         }
         auto bytes = input.take(size, "M30 sample payload");
         if (encoding == M30Encoding::Nami) apply_nami(bytes);
