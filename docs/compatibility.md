@@ -37,23 +37,60 @@ Every decoded M30 payload must be nonempty and begin with `OggS`; a payload that
 does not is rejected rather than passed to the decoder. Codec code 0 selects the
 background bank and codec 5 the normal bank; every other codec code is rejected.
 
-Evidence basis for the M30 flags differs and is worth stating precisely. Flags
-0 and 16 are corpus-proven: a 980-package sweep of the O2Jam, O2Jam Thai and
-NOWCOM installs found 605 flag-0 and 346 flag-16 packages, all parsed and
-decoded. **No flag-32 package appears anywhere in that corpus**, so flag 32
-remains supported on CXO2 source agreement plus synthetic tests only, and that
-support is deliberately untested against real data.
+The evidence basis for the three M30 flags is not the same, and the difference
+is worth stating precisely. Flags 0 and 16 are corpus-proven: a 980-package
+sweep found 605 flag-0 and 346 flag-16 packages, all parsed and decoded. Every
+installed flag-0 package is structurally complete and its declared samples
+already begin with a plain `OggS` signature, so no decryption is required, and
+CXO2's `M30Archive` transforms only flag 16 while passing other flags through
+unmodified. **No flag-32 package appears anywhere in that corpus**, so flag 32
+is supported as a plaintext variant on CXO2 source agreement plus synthetic
+tests only; it is deliberately untested against real data.
+
 Korea-era encrypted `new` OJN wrappers are rejected explicitly and remain 1.0.1
 scope. Any nonempty encoded sample that libsndfile cannot decode fails the run;
 samples are never silently omitted.
 
-Evidence for the M30 flag baseline: every installed flag-0 package in the
-reference corpus is structurally complete and all of its declared samples
-already begin with a plain `OggS` signature, so no decryption is required.
-CXO2's `M30Archive` transforms only flag 16 and passes every other flag through
-unmodified. Flag 32 is therefore supported as a plaintext variant, but no real
-flag-32 package exists in the available corpus; its support is validated by
-source agreement and synthetic tests rather than by a representative fixture.
+## Reference corpus
+
+The claims above were measured against three retail installations: O2Jam
+(130 charts), O2Jam Thai (100), and NOWCOM O2Jam (728). That is 958 charts and
+980 sample packages, of which 464 are ordinary OJN charts in 1.0.0 scope and
+494 are Korea-era `new` wrappers recorded as expected skips rather than
+failures. Package kinds are 605 M30 flag 0, 346 M30 flag 16, 13 OJM and 15 OMC.
+All 464 ordinary charts parse, decode, and render; every `new` wrapper is
+skipped for the documented reason.
+
+Note that the same chart id recurs across installations, so identical filenames
+under different roots must be kept distinct when reporting per-case results.
+
+Three specimens are worth recording, because each looks like a defect and only
+one is:
+
+`o2ma105.ojn` declares a 97-second hard duration while its last note falls at
+roughly 101 seconds. It is well-formed; it is simply the most extreme case of
+the declared-duration under-reporting described above, and it renders correctly
+once output length follows content.
+
+`o2ma848.ojm` is genuinely malformed and is rejected. Its payload-size field
+holds the total file size rather than the payload size — off by exactly the
+28-byte header — and its sample count declares 992 records where the directory
+contains 363. The body is otherwise intact: all 363 records use codec 5, every
+payload decodes to a valid `OggS` stream, and the directory ends exactly at
+EOF. The rejection is nonetheless correct, because 951 of the 952 M30 packages
+in the corpus use the opposite convention; relaxing either check to accommodate
+one specimen would mean trusting corrupt count fields everywhere else. Both
+conventions do coexist legitimately in this format — OMC validates against
+total file size while M30 validates against payload size — which is the likely
+origin of the discrepancy. The file blocks no supported content: its chart is
+itself a `new` wrapper and therefore out of 1.0.0 scope.
+
+`o2ma283.ojm` needs the single-page Ogg checksum repair described below, and is
+the only package in the corpus that does.
+
+Two tutorial charts render as one second of silence. This is correct rather
+than a decoding failure: both declare a hard note count and hard duration of
+zero, so no hard chart exists to render.
 
 ## Exact release-pair corrections
 
@@ -82,3 +119,17 @@ mapping, quick-mode exact intra-block scheduling, realtime 48-frame
 quantization, and transactional failure. Real OJN/OJM
 parity, correlation, and codec measurements must be collected from opt-in
 private fixtures before a production compatibility claim is made.
+
+## Verification status
+
+Everything above was verified on Windows x64 and Linux x64, the latter
+including the manylinux2014/glibc-2.17 release container with a clean
+ASan/UBSan run. Realtime playback through a system audio device was checked by
+hand on both a fixed-tempo chart and the corpus chart with the most tempo
+changes.
+
+macOS universal and the Windows x86 legacy comparison build are **untested**:
+presets exist for both, but no build or test run has been performed on either
+because no such machine was available. Treat them as unverified until someone
+runs them, and do not infer a compatibility claim from the presence of a
+preset.
