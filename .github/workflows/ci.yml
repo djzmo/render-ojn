@@ -43,7 +43,22 @@ jobs:
       - run: |
           cmake -E tar tf out/build/linux-x64-manylinux2014/RenderOJN-*-linux-x86_64-glibc2.17.tar.gz
           cat out/build/linux-x64-manylinux2014/SHA256SUMS
-      - uses: lukka/run-vcpkg@v11
+      # The presets resolve vcpkg through $env{VCPKG_ROOT}. Windows runners set
+      # that themselves because their image ships vcpkg, but Ubuntu runners do
+      # not, and lukka/run-vcpkg cannot supply it here: that action expects
+      # vcpkg as a git submodule plus a vcpkg-configuration.json, and this
+      # project has neither -- it pins its registry through builtin-baseline in
+      # vcpkg.json. It left a half-initialized tree that CMake then failed on.
+      # Bootstrap the pinned baseline directly, exactly as
+      # cmake/build-manylinux2014.sh already does for the release build.
+      - name: Bootstrap vcpkg at the pinned baseline
+        run: |
+          baseline=$(python3 -c "import json;print(json.load(open('vcpkg.json'))['builtin-baseline'])")
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git "$RUNNER_TEMP/vcpkg"
+          git -C "$RUNNER_TEMP/vcpkg" fetch --depth 1 origin "$baseline"
+          git -C "$RUNNER_TEMP/vcpkg" checkout --detach "$baseline"
+          "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+          echo "VCPKG_ROOT=$RUNNER_TEMP/vcpkg" >> "$GITHUB_ENV"
       - run: sudo apt-get update && sudo apt-get install -y clang
       - run: cmake --preset linux-x64-fuzz
       - run: cmake --build --preset linux-x64-fuzz-debug --target renderojn_fuzz_ojn renderojn_fuzz_ojm
