@@ -1,0 +1,5 @@
+Fuzz seed corpus. Add only redistributable malformed or synthetic OJN inputs here.
+
+- `exact-five-way.seed`: non-divisible five-way note subdivision.
+- `measure-fraction.seed`: channel-0 fraction normalization.
+- `bpm-channel-order.seed`: channel-order backtracking arouiffers from the chart section.
