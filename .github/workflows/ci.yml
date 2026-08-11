@@ -106,10 +106,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # Excludes ports/ for the same reason as the windows job above.
+      #
+      # runVcpkgInstall stays off here. It defaults on whenever a manifest is
+      # found and runs `vcpkg install --triplet universal-osx` as its own step,
+      # before CMake configures. That standalone invocation gets no
+      # --overlay-triplets, so it resolves the triplet *name* but never reads
+      # triplets/universal-osx.cmake -- and so never sees
+      # VCPKG_OSX_ARCHITECTURES. Every dependency was built x86_64-only, and
+      # the universal link then failed with each LAME, libsndfile and Catch2
+      # symbol "not found for architecture arm64". Letting the toolchain file
+      # install during `cmake --preset` applies the preset's
+      # VCPKG_OVERLAY_TRIPLETS, which is the only path that honours the
+      # architecture list.
       - uses: lukka/run-vcpkg@v11
         with:
           vcpkgJsonIgnores: "['**/vcpkg/**', '**/ports/**']"
+          runVcpkgInstall: false
       - run: cmake --preset macos-universal
+      # Fail at the cause rather than at the link. A dependency built for one
+      # architecture otherwise surfaces ~20 minutes later as a wall of
+      # undefined symbols, which reads like a source problem and is not one.
+      - name: Assert the dependencies are actually universal
+        run: |
+          for lib in libmp3lame.a libsndfile.a libtag.a; do
+            path="vcpkg_installed/universal-osx/lib/$lib"
+            test -f "$path" || { echo "missing $path"; exit 1; }
+            archs=$(lipo -archs "$path")
+            echo "$lib: $archs"
+            case "$archs" in
+              *x86_64*arm64*|*arm64*x86_64*) ;;
+              *) echo "::error::$lib is not universal (got: $archs)"; exit 1 ;;
+            esac
+          done
       - run: cmake --build --preset macos-universal-debug
       - run: cmake --build --preset macos-universal-release
       - run: ctest --preset macos-universal-test
