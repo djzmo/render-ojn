@@ -71,6 +71,29 @@ jobs:
       - run: out/build/linux-x64-fuzz/Debug/renderojn_fuzz_ojn -runs=1000 fuzz/corpus/ojn
       - run: out/build/linux-x64-fuzz/Debug/renderojn_fuzz_ojm -runs=1000 fuzz/corpus/ojm
 
+  # Independent of the C++ jobs on purpose. Those take ~30 minutes with vcpkg,
+  # and web feedback nobody waits for is web feedback nobody reads.
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      # `npm run build` is deliberately absent: it runs scripts/sync-wasm.mjs,
+      # which needs the Emscripten artifact that is git-ignored and requires an
+      # emsdk + vcpkg build. No test touches that artifact, which is what lets
+      # this job run on a fresh clone in seconds.
+
   macos:
     runs-on: macos-14
     steps:
