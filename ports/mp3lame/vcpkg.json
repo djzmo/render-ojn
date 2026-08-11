@@ -8,6 +8,11 @@
   "license": "LGPL-2.0-only",
   "dependencies": [
     {
+      "name": "vcpkg-cmake-get-vars",
+      "host": true,
+      "platform": "!windows | mingw"
+    },
+    {
       "name": "vcpkg-make",
       "host": true,
       "platform": "!windows | mingw"

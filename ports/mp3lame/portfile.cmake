@@ -128,6 +128,25 @@ else()
         configure_file("${_renderojn_config_guess}" "${SOURCE_PATH}/config.guess" COPYONLY)
     endif()
 
+    # A universal macOS slice hands the compiler both architectures at once, and
+    # clang refuses to preprocess for more than one:
+    #
+    #     clang: error: cannot use 'cpp-output' output with multiple -arch options
+    #
+    # Autoconf's default preprocessor is "$CC -E", so its check fails, it falls
+    # back to /lib/cpp -- which macOS has not shipped for years -- and configure
+    # dies with `C preprocessor "/lib/cpp" fails sanity check` before compiling
+    # anything. vcpkg leaves CPP unset on non-Windows targets, so pin it here to
+    # a single architecture. Only the compile and link steps have to be
+    # universal; the headers configure inspects are the same for both slices.
+    list(LENGTH VCPKG_OSX_ARCHITECTURES renderojn_osx_arch_count)
+    if(VCPKG_TARGET_IS_OSX AND renderojn_osx_arch_count GREATER 1)
+        vcpkg_cmake_get_vars(renderojn_cmake_vars_file)
+        include("${renderojn_cmake_vars_file}")
+        list(GET VCPKG_OSX_ARCHITECTURES 0 renderojn_cpp_arch)
+        list(APPEND OPTIONS "CPP=${VCPKG_DETECTED_CMAKE_C_COMPILER} -arch ${renderojn_cpp_arch} -E")
+    endif()
+
     vcpkg_make_configure(
         SOURCE_PATH "${SOURCE_PATH}"
         OPTIONS

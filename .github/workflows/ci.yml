@@ -126,10 +126,16 @@ jobs:
       # Fail at the cause rather than at the link. A dependency built for one
       # architecture otherwise surfaces ~20 minutes later as a wall of
       # undefined symbols, which reads like a source problem and is not one.
+      #
+      # The tree lives under the preset's binaryDir, not the workspace root:
+      # vcpkg's toolchain file installs into ${CMAKE_BINARY_DIR}/vcpkg_installed.
+      # The workspace-root path only held while run-vcpkg did the install, and
+      # checking it after the move made this step fail with "missing
+      # vcpkg_installed/universal-osx/lib/libmp3lame.a".
       - name: Assert the dependencies are actually universal
         run: |
           for lib in libmp3lame.a libsndfile.a libtag.a; do
-            path="vcpkg_installed/universal-osx/lib/$lib"
+            path="out/build/macos-universal/vcpkg_installed/universal-osx/lib/$lib"
             test -f "$path" || { echo "missing $path"; exit 1; }
             archs=$(lipo -archs "$path")
             echo "$lib: $archs"
