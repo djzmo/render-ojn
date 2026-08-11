@@ -1,44 +1,40 @@
-Make the SSE guard per-architecture rather than per-configure-run.
+Remove the unreachable SSE dispatch that breaks universal builds.
 
-A universal Mach-O build compiles every slice from a single configure
-run, but configure probes the host only once. On an Apple Silicon runner
-the "working SSE intrinsics" test compiles _mm_sfence() and fails, so
-HAVE_XMMINTRIN_H is left undefined for *both* slices -- yet the x86_64
-slice still compiles the SSE code path and references
-init_xrpow_core_sse, which was never built:
+A universal Mach-O build compiles every slice from one configure run,
+but configure probes the host once. On an Apple Silicon runner the
+"working SSE intrinsics" test compiles _mm_sfence(), fails, and leaves
+HAVE_XMMINTRIN_H undefined -- so xmm_quantize_sub.c never compiles
+init_xrpow_core_sse. The x86_64 slice still links against it:
 
     Undefined symbols for architecture x86_64:
       "_init_xrpow_core_sse"
 
-Seeding ac_cv_header_xmmintrin_h does not help. The check is a
-hand-rolled AC_COMPILE_IFELSE that assigns the variable unconditionally
-(configure line ~13411), not an AC_CHECK_HEADER that consults the cache,
-so a pre-seeded value is overwritten before it is ever read.
+Two earlier approaches do not work. Seeding ac_cv_header_xmmintrin_h is
+ignored, because the check is a hand-rolled AC_COMPILE_IFELSE that
+assigns the variable unconditionally rather than an AC_CHECK_HEADER that
+consults the cache. Gating on __SSE__ does not help either: it is not
+defined while compiling the x86_64 slice here.
 
-Gate both the definition and its use on __SSE__, which the compiler
-defines per-slice as it compiles. The two then appear and disappear
-together whichever architecture is being built, and single-architecture
-builds are unaffected.
+The dispatch being removed is already dead on this build path. It is
+guarded by gfc->CPU_features.SSE, and has_SSE() in util.c returns 0
+whenever HAVE_NASM is undefined and neither _M_X64 nor MIN_ARCH_SSE is
+defined -- which is exactly the autotools configuration. The branch can
+never be taken, so deleting it changes no behaviour and removes the only
+reference that survives when the definition does not.
+
+The MIN_ARCH_SSE block below it is left alone: that macro is defined
+only by LAME's MSVC project files, so it is already inert here.
 
 --- a/libmp3lame/quantize.c
 +++ b/libmp3lame/quantize.c
-@@ -94,7 +94,7 @@
+@@ -94,10 +94,6 @@
  {
      gfc->init_xrpow_core = init_xrpow_core_c;
  
 -#if defined(HAVE_XMMINTRIN_H)
-+#if defined(HAVE_XMMINTRIN_H) && defined(__SSE__)
-     if (gfc->CPU_features.SSE)
-         gfc->init_xrpow_core = init_xrpow_core_sse;
- #endif
---- a/libmp3lame/vector/xmm_quantize_sub.c
-+++ b/libmp3lame/vector/xmm_quantize_sub.c
-@@ -32,7 +32,7 @@
- 
- 
- 
--#ifdef HAVE_XMMINTRIN_H
-+#if defined(HAVE_XMMINTRIN_H) || defined(__SSE__)
- 
- #include <xmmintrin.h>
- 
+-    if (gfc->CPU_features.SSE)
+-        gfc->init_xrpow_core = init_xrpow_core_sse;
+-#endif
+ #ifndef HAVE_NASM
+ #ifdef MIN_ARCH_SSE
+     gfc->init_xrpow_core = init_xrpow_core_sse;
