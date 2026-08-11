@@ -119,9 +119,15 @@ else()
     # so both slices agree that SSE is unavailable.  The cost is a little
     # encoder throughput on Intel Macs; a universal binary that links is worth
     # more, and bulk conversion does not run on this build.
-    list(LENGTH VCPKG_OSX_ARCHITECTURES z_renderojn_osx_arch_count)
-    if(VCPKG_TARGET_IS_OSX AND z_renderojn_osx_arch_count GREATER 1)
+    # Applied to every macOS build rather than only detectably-universal ones.
+    # VCPKG_OSX_ARCHITECTURES is a triplet variable and is not reliably visible
+    # in portfile scope, so a length test on it silently evaluated false and
+    # the override never reached configure. Losing SSE on a single-architecture
+    # Intel build costs a little throughput; guessing wrong about the scope
+    # costs a broken universal binary.
+    if(VCPKG_TARGET_IS_OSX)
         list(APPEND OPTIONS ac_cv_header_xmmintrin_h=no)
+        message(STATUS "renderojn overlay: disabling LAME SSE probe for macOS")
     endif()
 
     # LAME 3.100 vendors config.sub/config.guess from 2015, which predates
