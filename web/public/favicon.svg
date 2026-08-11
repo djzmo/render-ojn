@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="6" fill="#12110F" />
+  <!-- Three sample slots; the last is still empty, waiting for its package. -->
+  <rect x="7" y="8" width="18" height="4" rx="1" fill="#F0A93B" />
+  <rect x="7" y="14" width="12" height="4" rx="1" fill="#F0A93B" />
+  <rect
+    x="7.5"
+    y="20.5"
+    width="17"
+    height="3"
+    rx="1"
+    fill="none"
+    stroke="#B4453C"
+    stroke-width="1"
+    stroke-dasharray="2 2"
+  />
+</svg>

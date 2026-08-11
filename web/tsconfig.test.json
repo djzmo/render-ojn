@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
+    "noEmit": true,
+    /* Tests reach for both DOM and Node built-ins (zlib.crc32 as a CRC oracle). */
+    "types": ["vite/client", "node"]
+  },
+  /* Tests import the modules under test, so src must be visible to the compiler
+     even though tsconfig.app.json owns compiling it. */
+  "include": ["tests", "src"]
+}
