@@ -36,10 +36,16 @@ set(RENDEROJN_CORE_SOURCES
     src/core/format/PackageParser.cpp
     src/core/audio/Decoder.cpp
     src/core/audio/OggNormalizer.cpp
-    src/core/audio/Playback.cpp
     src/core/render/Mixer.cpp
     src/core/output/Encoder.cpp
     src/app/Cli.cpp)
+
+# Live playback drives an OS audio device through miniaudio, which the browser
+# build has no use for and cannot link against.  Everything else in the core is
+# platform-neutral.
+if(NOT EMSCRIPTEN)
+  list(APPEND RENDEROJN_CORE_SOURCES src/core/audio/Playback.cpp)
+endif()
 
 add_library(renderojn_core STATIC ${RENDEROJN_CORE_SOURCES})
 target_include_directories(renderojn_core PUBLIC src "${CMAKE_CURRENT_BINARY_DIR}/generated")
@@ -60,9 +66,11 @@ if(RENDEROJN_WITH_EXTERNAL_DEPS)
   find_package(SndFile CONFIG REQUIRED)
   find_package(mp3lame CONFIG REQUIRED)
   find_package(TagLib CONFIG REQUIRED)
-  # miniaudio 0.11.25 is a header-only vcpkg port without a CMake config package.
-  find_path(MINIAUDIO_INCLUDE_DIR NAMES miniaudio.h REQUIRED)
-  target_include_directories(renderojn_core PRIVATE ${MINIAUDIO_INCLUDE_DIR})
+  if(NOT EMSCRIPTEN)
+    # miniaudio 0.11.25 is a header-only vcpkg port without a CMake config package.
+    find_path(MINIAUDIO_INCLUDE_DIR NAMES miniaudio.h REQUIRED)
+    target_include_directories(renderojn_core PRIVATE ${MINIAUDIO_INCLUDE_DIR})
+  endif()
   target_link_libraries(renderojn_core PUBLIC SndFile::sndfile mp3lame::mp3lame TagLib::TagLib)
   if(WIN32)
     target_link_libraries(renderojn_core PRIVATE winmm ole32 avrt)
@@ -77,12 +85,53 @@ if(RENDEROJN_WITH_EXTERNAL_DEPS)
   target_compile_definitions(renderojn_core PUBLIC RENDEROJN_EXTERNAL_DEPS=1)
 endif()
 
-add_executable(RenderOJN src/app/Main.cpp)
-target_link_libraries(RenderOJN PRIVATE renderojn_core)
-if(WIN32)
-  target_sources(RenderOJN PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/RenderOJN.rc)
+if(EMSCRIPTEN)
+  # The browser build ships the renderer as a module rather than a CLI: no
+  # argv, no filesystem, no audio device.  Everything it exposes lives in
+  # src/wasm/Bindings.cpp.
+  add_executable(renderojn_wasm src/wasm/Bindings.cpp)
+  target_link_libraries(renderojn_wasm PRIVATE renderojn_core)
+  renderojn_apply_warnings(renderojn_wasm)
+  set_target_properties(renderojn_wasm PROPERTIES OUTPUT_NAME renderojn)
+  # Emscripten discards `catch` blocks unless exception catching is enabled at
+  # *compile* time; the matching link flag alone is not enough.  Without this
+  # the binding's translation of core errors into JavaScript Errors is silently
+  # compiled away, and every failure reaches the UI as an opaque handle.  The
+  # core is compiled with it too, since that is where the throws originate.
+  target_compile_options(renderojn_core PUBLIC "-sDISABLE_EXCEPTION_CATCHING=0")
+  target_link_options(renderojn_wasm PRIVATE
+      "--bind"
+      "-sMODULARIZE=1"
+      "-sEXPORT_ES6=1"
+      "-sEXPORT_NAME=createRenderOJN"
+      "-sALLOW_MEMORY_GROWTH=1"
+      # A large sample bank plus the mixed output is the memory high-water mark;
+      # starting small and growing repeatedly is slower than starting here.
+      "-sINITIAL_MEMORY=268435456"
+      # libvorbis's analysis path (_preextrapolate_helper -> vorbis_analysis_wrote)
+      # overruns Emscripten's 64KB default stack.  Native builds get 1-8MB from
+      # the OS, which is why this only ever surfaces in the browser build.
+      "-sSTACK_SIZE=5242880"
+      # Node is included so the module can be exercised headlessly (corpus
+      # verification, CI) with the same binary the browser loads.  Its loader
+      # branch is guarded by a runtime environment check, so it never executes
+      # in a browser; it does make the glue reference node:module, which
+      # bundlers report as an externalized import.  That warning is expected.
+      "-sENVIRONMENT=web,worker,node"
+      # getExceptionMessage turns a thrown renderojn::Error into readable text on
+      # the JavaScript side, which is what the UI shows when a file is malformed.
+      "-sEXPORTED_RUNTIME_METHODS=['HEAPU8','getExceptionMessage','decrementExceptionRefcount']"
+      # Errors cross into JavaScript as exceptions rather than aborting the
+      # module, so a bad file fails one render instead of the whole session.
+      "-sDISABLE_EXCEPTION_CATCHING=0")
+else()
+  add_executable(RenderOJN src/app/Main.cpp)
+  target_link_libraries(RenderOJN PRIVATE renderojn_core)
+  if(WIN32)
+    target_sources(RenderOJN PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/RenderOJN.rc)
+  endif()
+  set_target_properties(RenderOJN PROPERTIES OUTPUT_NAME RenderOJN)
 endif()
-set_target_properties(RenderOJN PROPERTIES OUTPUT_NAME RenderOJN)
 
 if(BUILD_TESTING AND RENDEROJN_BUILD_TESTS)
   find_package(Catch2 3 CONFIG REQUIRED)
@@ -112,5 +161,7 @@ if(RENDEROJN_BUILD_FUZZERS)
   endforeach()
 endif()
 
-install(TARGETS RenderOJN RUNTIME DESTINATION .)
-install(FILES README.md LICENSE THIRD_PARTY_NOTICES.md DESTINATION .)
+if(NOT EMSCRIPTEN)
+  install(TARGETS RenderOJN RUNTIME DESTINATION .)
+  install(FILES README.md LICENSE THIRD_PARTY_NOTICES.md DESTINATION .)
+endif()

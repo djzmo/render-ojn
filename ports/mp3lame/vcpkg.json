@@ -1,0 +1,32 @@
+{
+  "$note": "RenderOJN overlay: refreshes LAME's 2015 config.sub/config.guess so the autotools configure recognizes wasm32-unknown-emscripten. Identical to the upstream port on every other triplet.",
+  "name": "mp3lame",
+  "version": "3.100",
+  "port-version": 17,
+  "description": "LAME is a high quality MPEG Audio Layer III (MP3) encoder licensed under the LGPL.",
+  "homepage": "https://lame.sourceforge.io",
+  "license": "LGPL-2.0-only",
+  "dependencies": [
+    {
+      "name": "vcpkg-make",
+      "host": true,
+      "platform": "!windows | mingw"
+    },
+    {
+      "name": "vcpkg-msbuild",
+      "host": true,
+      "platform": "windows & !mingw"
+    }
+  ],
+  "features": {
+    "frontend": {
+      "description": "Build the lame frontend",
+      "dependencies": [
+        {
+          "name": "ncurses",
+          "platform": "!windows | mingw"
+        }
+      ]
+    }
+  }
+}
