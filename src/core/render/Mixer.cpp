@@ -30,11 +30,14 @@ void add_voice(const format::NoteEvent& event, const std::unordered_map<std::uin
         diagnostics.warn("sample reference overflows for note " + std::to_string(event.reference_id));
         return;
     }
+    // A reference to a slot the package does not populate is normal, not a
+    // defect: 778 of the 958 charts in the validation corpus do it, 35,145
+    // times in total.  The note is skipped and mixing continues.  This used to
+    // warn, but a diagnostic that fires on four files in five is noise, and it
+    // devalued the warnings that do mean something -- compatibility
+    // corrections and empty directory records.
     const auto iterator = samples.find(static_cast<std::uint16_t>(requested));
-    if (iterator == samples.end()) {
-        diagnostics.warn("sample " + std::to_string(requested) + " was referenced but is absent from the package");
-        return;
-    }
+    if (iterator == samples.end()) return;
     if (voices.size() >= kVoiceLimit) {
         diagnostics.warn("voice limit reached; dropping newest trigger");
         return;

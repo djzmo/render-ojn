@@ -114,6 +114,19 @@ Two tutorial charts render as one second of silence. This is correct rather
 than a decoding failure: both declare a hard note count and hard duration of
 zero, so no hard chart exists to render.
 
+Charts routinely reference sample slots their package does not populate:
+**778 of the 958 corpus charts (81%) do it, 35,145 times in total.** The
+renderer skips the note and continues, so the output is a complete render of
+what the package actually contains. This is the norm, not a defect in an
+individual file.
+
+It used to emit one warning per occurrence. That was removed: a diagnostic
+firing on four files in five carries no signal, and it trained readers to skim
+past the warnings that do matter — the release-pair corrections below, and the
+empty directory records above. Whether the original client also silences these
+notes has not been verified against the real game, so the renderer makes no
+claim either way; it simply does not treat the reference as noteworthy.
+
 ## Exact release-pair corrections
 
 The compatibility-profile table is intentionally narrow and data-driven. One
