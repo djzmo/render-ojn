@@ -53,8 +53,15 @@ jobs:
       # config.sub that predates emscripten in the autotools system list, so
       # the stock port cannot configure for this triplet at all.
       - name: Build the audio dependencies for wasm32-emscripten
+        # --classic is required: this runs from the repo root, where vcpkg.json
+        # puts vcpkg in manifest mode, and manifest mode rejects named packages
+        # ("`vcpkg install` does not support individual package arguments").
+        # The root manifest describes the *desktop* dependency set; the browser
+        # build needs a different one against a different triplet, so naming
+        # the three packages explicitly is the intent, not a shortcut.
         run: |
           "$VCPKG_ROOT/vcpkg" install libsndfile mp3lame taglib \
+            --classic \
             --triplet wasm32-emscripten \
             --overlay-ports=./ports
           # vcpkg has been observed exiting 0 with the failure only in its log
