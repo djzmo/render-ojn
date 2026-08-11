@@ -108,6 +108,22 @@ else()
         list(APPEND OPTIONS --with-pic=yes)
     endif()
 
+    # A universal Mach-O build compiles both slices from a single configure
+    # run, but configure probes the host only once.  On an arm64 runner
+    # <xmmintrin.h> is absent, so HAVE_XMMINTRIN_H goes undefined and
+    # init_xrpow_core_sse is never compiled -- yet quantize.c still references
+    # it when building the x86_64 slice, and the link fails with that one
+    # symbol "not found for architecture x86_64".
+    #
+    # Pre-seeding the cache variable makes configure skip the probe entirely,
+    # so both slices agree that SSE is unavailable.  The cost is a little
+    # encoder throughput on Intel Macs; a universal binary that links is worth
+    # more, and bulk conversion does not run on this build.
+    list(LENGTH VCPKG_OSX_ARCHITECTURES z_renderojn_osx_arch_count)
+    if(VCPKG_TARGET_IS_OSX AND z_renderojn_osx_arch_count GREATER 1)
+        list(APPEND OPTIONS ac_cv_header_xmmintrin_h=no)
+    endif()
+
     # LAME 3.100 vendors config.sub/config.guess from 2015, which predates
     # emscripten's entry in the autotools system list.  Configure therefore dies
     # with "Invalid configuration `wasm32-unknown-emscripten': system
