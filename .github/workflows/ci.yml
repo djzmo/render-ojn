@@ -12,7 +12,14 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
+      # The action discovers a vcpkg.json with the glob `**/vcpkg.json` and
+      # reads builtin-baseline from it. ports/mp3lame/vcpkg.json is an overlay
+      # *port* definition, which correctly carries no baseline, so leaving it
+      # discoverable fails the job with "A Git commit id for vcpkg's baseline
+      # was not found". Exclude ports/ so only the root manifest matches.
       - uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgJsonIgnores: "['**/vcpkg/**', '**/ports/**']"
       - uses: ilammy/msvc-dev-cmd@v1
       - run: cmake --preset ${{ matrix.preset }}
       - run: cmake --build --preset ${{ matrix.preset }}-debug
@@ -98,7 +105,10 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
+      # Excludes ports/ for the same reason as the windows job above.
       - uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgJsonIgnores: "['**/vcpkg/**', '**/ports/**']"
       - run: cmake --preset macos-universal
       - run: cmake --build --preset macos-universal-debug
       - run: cmake --build --preset macos-universal-release
