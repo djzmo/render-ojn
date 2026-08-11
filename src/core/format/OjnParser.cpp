@@ -3,6 +3,7 @@
 #include "core/Diagnostic.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -320,6 +321,17 @@ Chart parse_ojn_chart(const std::shared_ptr<const io::ByteBuffer>& buffer, Diffi
         return left.frame < right.frame;
     });
     return chart;
+}
+
+std::string genre_name(std::uint32_t genre, Diagnostics& diagnostics) {
+    // Fixed by the format: the header stores an index into this list.
+    static constexpr std::array<const char*, 11> kGenres{"Ballad", "Rock",      "Dance",       "Techno", "Hip-hop", "Soul/R&B",
+                                                         "Jazz",   "Funk",      "Classical",   "Traditional", "Etc"};
+    if (genre >= kGenres.size()) {
+        diagnostics.warn("invalid genre code; using Etc");
+        return kGenres.back();
+    }
+    return kGenres[genre];
 }
 
 } // namespace renderojn::format

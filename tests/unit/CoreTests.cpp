@@ -503,6 +503,23 @@ TEST_CASE("truncated OJN headers fail explicitly") {
     CHECK_THROWS_AS(renderojn::format::parse_ojn_header(truncated), renderojn::Error);
 }
 
+TEST_CASE("genre codes resolve to their names and out-of-range codes warn") {
+    // Both the CLI and the WebAssembly binding tag output with this, so it is
+    // shared rather than copied; the table itself is fixed by the format.
+    renderojn::Diagnostics diagnostics;
+    CHECK(renderojn::format::genre_name(0, diagnostics) == "Ballad");
+    CHECK(renderojn::format::genre_name(2, diagnostics) == "Dance");
+    CHECK(renderojn::format::genre_name(10, diagnostics) == "Etc");
+    CHECK(diagnostics.warnings().empty());
+
+    // Out of range falls back to Etc rather than throwing: a bad genre code is
+    // not a reason to refuse to render a chart.
+    CHECK(renderojn::format::genre_name(11, diagnostics) == "Etc");
+    CHECK(diagnostics.warnings().size() == 1);
+    CHECK(renderojn::format::genre_name(4294967295U, diagnostics) == "Etc");
+    CHECK(diagnostics.warnings().size() == 2);
+}
+
 TEST_CASE("Korea-era new wrappers decrypt to the ordinary chart they contain") {
     using renderojn::format::Difficulty;
 
