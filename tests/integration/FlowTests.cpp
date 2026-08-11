@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
@@ -22,6 +23,7 @@
 #include <sndfile.h>
 #include <fileref.h>
 #include <tag.h>
+#include <tbytevectorstream.h>
 #include <xiphcomment.h>
 #endif
 
@@ -206,6 +208,47 @@ renderojn::output::PcmProducer tone_producer(std::size_t frames) {
     };
 }
 
+#ifdef RENDEROJN_EXTERNAL_DEPS
+// Minimal read-only virtual IO so an in-memory encode can be decoded without
+// first spilling it to disk.
+struct MemoryReader {
+    std::vector<std::uint8_t> bytes;
+    sf_count_t position{};
+};
+
+sf_count_t memory_reader_length(void* user) {
+    return static_cast<sf_count_t>(static_cast<MemoryReader*>(user)->bytes.size());
+}
+
+sf_count_t memory_reader_seek(sf_count_t offset, int whence, void* user) {
+    auto& reader = *static_cast<MemoryReader*>(user);
+    const auto size = static_cast<sf_count_t>(reader.bytes.size());
+    sf_count_t target{};
+    if (whence == SEEK_SET) target = offset;
+    else if (whence == SEEK_CUR) target = reader.position + offset;
+    else if (whence == SEEK_END) target = size + offset;
+    else return -1;
+    if (target < 0 || target > size) return -1;
+    reader.position = target;
+    return reader.position;
+}
+
+sf_count_t memory_reader_read(void* destination, sf_count_t count, void* user) {
+    auto& reader = *static_cast<MemoryReader*>(user);
+    if (count <= 0) return 0;
+    const auto size = static_cast<sf_count_t>(reader.bytes.size());
+    if (reader.position >= size) return 0;
+    const auto available = size - reader.position;
+    const auto read = count < available ? count : available;
+    std::memcpy(destination, reader.bytes.data() + reader.position, static_cast<std::size_t>(read));
+    reader.position += read;
+    return read;
+}
+
+sf_count_t memory_reader_write(const void*, sf_count_t, void*) { return 0; }
+sf_count_t memory_reader_tell(void* user) { return static_cast<MemoryReader*>(user)->position; }
+#endif
+
 renderojn::output::Tags sample_tags() {
     renderojn::output::Tags tags{};
     tags.title = "Synthetic Title";
@@ -270,6 +313,117 @@ TEST_CASE("encoded MP3 and Ogg output carries exact tags and decodes to stereo 4
 
         std::filesystem::remove(destination, ignored);
     }
+}
+
+// The WebAssembly build publishes through encode_to_buffer while the desktop CLI
+// publishes through encode_transactionally.  If those two diverge, the web
+// renderer stops being the same product as the CLI, so assert the strongest
+// property each format actually admits.
+//
+// WAV and MP3 are fully deterministic and must match byte for byte.  Ogg cannot:
+// libsndfile seeds every Vorbis stream's serial number from the wall clock
+// (ogg_vorbis.c calls ogg_stream_init with psf_rand_int32, which reads
+// gettimeofday), so no two Ogg encodes are ever identical -- not even two file
+// encodes.  It is checked structurally instead, one case below.
+TEST_CASE("encoding to a buffer is byte-identical to encoding to a file") {
+    constexpr std::size_t kFrames = 24000;
+    struct Case {
+        renderojn::output::Format format;
+        const char* filename;
+    };
+    const std::vector<Case> cases{{renderojn::output::Format::Wav, "renderojn-parity.wav"},
+                                  {renderojn::output::Format::Mp3, "renderojn-parity.mp3"}};
+
+    for (const auto& item : cases) {
+        INFO("format: " << item.filename);
+        const auto destination = std::filesystem::temp_directory_path() / item.filename;
+        std::error_code ignored;
+        std::filesystem::remove(destination, ignored);
+
+        renderojn::output::encode_transactionally(item.format, destination, kFrames, 3, sample_tags(),
+                                                  tone_producer(kFrames));
+        REQUIRE(std::filesystem::exists(destination));
+        std::ifstream reader(destination, std::ios::binary);
+        const std::vector<std::uint8_t> from_file((std::istreambuf_iterator<char>(reader)),
+                                                  std::istreambuf_iterator<char>());
+        reader.close();
+
+        const auto from_buffer = renderojn::output::encode_to_buffer(item.format, kFrames, 3, sample_tags(),
+                                                                     tone_producer(kFrames));
+
+        CHECK(from_buffer.size() == from_file.size());
+        CHECK(from_buffer == from_file);
+
+        std::filesystem::remove(destination, ignored);
+    }
+}
+
+// Ogg's per-stream serial number is time-seeded, so parity is asserted over
+// everything except that: same length, same decoded audio, same tags.
+TEST_CASE("Ogg encoded to a buffer matches the file encoder everywhere it can") {
+    constexpr std::size_t kFrames = 24000;
+    const auto destination = std::filesystem::temp_directory_path() / "renderojn-parity-ogg.ogg";
+    std::error_code ignored;
+    std::filesystem::remove(destination, ignored);
+
+    renderojn::output::encode_transactionally(renderojn::output::Format::Ogg, destination, kFrames, 3, sample_tags(),
+                                              tone_producer(kFrames));
+    REQUIRE(std::filesystem::exists(destination));
+    std::ifstream reader(destination, std::ios::binary);
+    const std::vector<std::uint8_t> from_file((std::istreambuf_iterator<char>(reader)),
+                                              std::istreambuf_iterator<char>());
+    reader.close();
+
+    const auto from_buffer = renderojn::output::encode_to_buffer(renderojn::output::Format::Ogg, kFrames, 3,
+                                                                 sample_tags(), tone_producer(kFrames));
+
+    // A differing serial number does not change how much data the stream holds.
+    CHECK(from_buffer.size() == from_file.size());
+    REQUIRE(from_buffer.size() > 4);
+    CHECK(std::memcmp(from_buffer.data(), "OggS", 4) == 0);
+
+    // The audio itself must be identical.  Decode the buffer through the same
+    // virtual-IO path the encoder used and compare against the file's samples.
+    MemoryReader memory{from_buffer, 0};
+    SF_VIRTUAL_IO io{memory_reader_length, memory_reader_seek, memory_reader_read, memory_reader_write,
+                     memory_reader_tell};
+    SF_INFO buffer_info{};
+    SNDFILE* buffer_handle = sf_open_virtual(&io, SFM_READ, &buffer_info, &memory);
+    REQUIRE(buffer_handle != nullptr);
+    std::vector<float> buffer_samples(static_cast<std::size_t>(buffer_info.frames) * 2U);
+    const auto buffer_read = sf_readf_float(buffer_handle, buffer_samples.data(), buffer_info.frames);
+    sf_close(buffer_handle);
+
+    SF_INFO file_info{};
+    SNDFILE* file_handle = sf_open(destination.string().c_str(), SFM_READ, &file_info);
+    REQUIRE(file_handle != nullptr);
+    std::vector<float> file_samples(static_cast<std::size_t>(file_info.frames) * 2U);
+    const auto file_read = sf_readf_float(file_handle, file_samples.data(), file_info.frames);
+    sf_close(file_handle);
+
+    CHECK(buffer_info.frames == file_info.frames);
+    CHECK(buffer_info.channels == file_info.channels);
+    CHECK(buffer_info.samplerate == file_info.samplerate);
+    CHECK(buffer_read == file_read);
+    CHECK(buffer_samples == file_samples);
+
+    // And the tags must survive the ByteVectorStream path exactly as they do on
+    // disk, including the removed ENCODER field.
+    TagLib::ByteVectorStream tag_stream(TagLib::ByteVector(reinterpret_cast<const char*>(from_buffer.data()),
+                                                           static_cast<unsigned int>(from_buffer.size())));
+    TagLib::FileRef tagged(&tag_stream);
+    REQUIRE_FALSE(tagged.isNull());
+    REQUIRE(tagged.tag() != nullptr);
+    CHECK(tagged.tag()->title() == TagLib::String("Synthetic Title"));
+    CHECK(tagged.tag()->artist() == TagLib::String("Synthetic Artist"));
+    CHECK(tagged.tag()->track() == 7);
+    CHECK(tagged.tag()->genre() == TagLib::String("Synthetic Genre"));
+    CHECK(tagged.tag()->comment() == TagLib::String("Synthetic Comment"));
+    auto* xiph = dynamic_cast<TagLib::Ogg::XiphComment*>(tagged.tag());
+    REQUIRE(xiph != nullptr);
+    CHECK(xiph->fieldListMap().find("ENCODER") == xiph->fieldListMap().end());
+
+    std::filesystem::remove(destination, ignored);
 }
 
 TEST_CASE("a failure after encoding removes the temporary file and preserves the destination") {

@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace renderojn::output {
 
@@ -32,5 +33,13 @@ struct Mp3Quality {
 
 void encode_transactionally(Format format, const std::filesystem::path& destination, std::uint64_t frames, int quality,
                             const Tags& tags, const PcmProducer& produce);
+
+// Encodes to memory instead of the filesystem, for hosts that have no writable
+// path to publish to -- the WebAssembly build in particular.  Both entry points
+// run the same encoders over the same sink abstraction, so a buffer and a file
+// produced from identical input are byte-for-byte identical.  Tagging applies to
+// MP3 and Ogg exactly as it does on disk; WAV carries no tags in either path.
+[[nodiscard]] std::vector<std::uint8_t> encode_to_buffer(Format format, std::uint64_t frames, int quality,
+                                                         const Tags& tags, const PcmProducer& produce);
 
 } // namespace renderojn::output
