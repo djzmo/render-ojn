@@ -1,0 +1,107 @@
+name: Pages
+
+# Only from the default branch, and manually. The site is a published artifact,
+# so building it from a feature branch would either publish unreviewed work or
+# waste a ~20 minute toolchain build on something that is not going to ship.
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a run in progress finish rather than cancelling it: a half-finished
+# deployment leaves the site serving a mix of old and new assets.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # The web app is a thin shell around the C++ core compiled to
+      # WebAssembly, so the site cannot be built without the toolchain that
+      # produces it. This is why deployment is a separate workflow from the
+      # web checks in ci.yml, which deliberately need neither.
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          # Pinned rather than 'latest': the module is sensitive to link flags
+          # that have changed between emsdk majors, and a silently updated
+          # toolchain is not something a published site should depend on.
+          version: 6.0.6
+          actions-cache-folder: emsdk-cache
+
+      # Same bootstrap as the linux job in ci.yml: lukka/run-vcpkg expects a
+      # submodule plus vcpkg-configuration.json, and this project has neither
+      # -- it pins its registry through builtin-baseline in vcpkg.json.
+      - name: Bootstrap vcpkg at the pinned baseline
+        run: |
+          baseline=$(python3 -c "import json;print(json.load(open('vcpkg.json'))['builtin-baseline'])")
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git "$RUNNER_TEMP/vcpkg"
+          git -C "$RUNNER_TEMP/vcpkg" fetch --depth 1 origin "$baseline"
+          git -C "$RUNNER_TEMP/vcpkg" checkout --detach "$baseline"
+          "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+          echo "VCPKG_ROOT=$RUNNER_TEMP/vcpkg" >> "$GITHUB_ENV"
+
+      # ports/ carries an overlay for mp3lame: LAME 3.100 vendors a 2015
+      # config.sub that predates emscripten in the autotools system list, so
+      # the stock port cannot configure for this triplet at all.
+      - name: Build the audio dependencies for wasm32-emscripten
+        run: |
+          "$VCPKG_ROOT/vcpkg" install libsndfile mp3lame taglib \
+            --triplet wasm32-emscripten \
+            --overlay-ports=./ports
+          # vcpkg has been observed exiting 0 with the failure only in its log
+          # body, so assert on the artifacts rather than the exit status.
+          for lib in libsndfile.a libmp3lame.a libtag.a libvorbisenc.a; do
+            test -f "$VCPKG_ROOT/installed/wasm32-emscripten/lib/$lib" \
+              || { echo "missing $lib"; exit 1; }
+          done
+
+      - name: Build the WebAssembly module
+        run: |
+          cmake -S . -B out/build/wasm \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE="$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake" \
+            -DVCPKG_TARGET_TRIPLET=wasm32-emscripten \
+            -DVCPKG_MANIFEST_MODE=OFF \
+            -DRENDEROJN_BUILD_TESTS=OFF
+          cmake --build out/build/wasm
+          test -f out/build/wasm/renderojn.wasm
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build the site
+        working-directory: web
+        # `build` runs sync-wasm.mjs first, which copies the module out of the
+        # CMake tree; it fails loudly if the artifact is missing.
+        run: |
+          npm ci
+          npm run build
+          test -f dist/index.html
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
