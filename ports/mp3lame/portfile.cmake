@@ -9,6 +9,7 @@ vcpkg_from_sourceforge(
         remove_lame_init_old_from_symbol_list.patch # deprecated https://github.com/zlargon/lame/blob/master/include/lame.h#L169
         add-macos-universal-config.patch
         fix-mingw-w64-compatibility.patch
+        fix-universal-sse-guard.patch # RenderOJN: see the patch header
 )
 
 if(VCPKG_TARGET_IS_WINDOWS AND NOT VCPKG_TARGET_IS_MINGW)
@@ -106,28 +107,6 @@ else()
 
     if(NOT VCPKG_TARGET_IS_MINGW)
         list(APPEND OPTIONS --with-pic=yes)
-    endif()
-
-    # A universal Mach-O build compiles both slices from a single configure
-    # run, but configure probes the host only once.  On an arm64 runner
-    # <xmmintrin.h> is absent, so HAVE_XMMINTRIN_H goes undefined and
-    # init_xrpow_core_sse is never compiled -- yet quantize.c still references
-    # it when building the x86_64 slice, and the link fails with that one
-    # symbol "not found for architecture x86_64".
-    #
-    # Pre-seeding the cache variable makes configure skip the probe entirely,
-    # so both slices agree that SSE is unavailable.  The cost is a little
-    # encoder throughput on Intel Macs; a universal binary that links is worth
-    # more, and bulk conversion does not run on this build.
-    # Applied to every macOS build rather than only detectably-universal ones.
-    # VCPKG_OSX_ARCHITECTURES is a triplet variable and is not reliably visible
-    # in portfile scope, so a length test on it silently evaluated false and
-    # the override never reached configure. Losing SSE on a single-architecture
-    # Intel build costs a little throughput; guessing wrong about the scope
-    # costs a broken universal binary.
-    if(VCPKG_TARGET_IS_OSX)
-        list(APPEND OPTIONS ac_cv_header_xmmintrin_h=no)
-        message(STATUS "renderojn overlay: disabling LAME SSE probe for macOS")
     endif()
 
     # LAME 3.100 vendors config.sub/config.guess from 2015, which predates

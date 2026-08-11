@@ -1,0 +1,44 @@
+Make the SSE guard per-architecture rather than per-configure-run.
+
+A universal Mach-O build compiles every slice from a single configure
+run, but configure probes the host only once. On an Apple Silicon runner
+the "working SSE intrinsics" test compiles _mm_sfence() and fails, so
+HAVE_XMMINTRIN_H is left undefined for *both* slices -- yet the x86_64
+slice still compiles the SSE code path and references
+init_xrpow_core_sse, which was never built:
+
+    Undefined symbols for architecture x86_64:
+      "_init_xrpow_core_sse"
+
+Seeding ac_cv_header_xmmintrin_h does not help. The check is a
+hand-rolled AC_COMPILE_IFELSE that assigns the variable unconditionally
+(configure line ~13411), not an AC_CHECK_HEADER that consults the cache,
+so a pre-seeded value is overwritten before it is ever read.
+
+Gate both the definition and its use on __SSE__, which the compiler
+defines per-slice as it compiles. The two then appear and disappear
+together whichever architecture is being built, and single-architecture
+builds are unaffected.
+
+--- a/libmp3lame/quantize.c
++++ b/libmp3lame/quantize.c
+@@ -94,7 +94,7 @@
+ {
+     gfc->init_xrpow_core = init_xrpow_core_c;
+ 
+-#if defined(HAVE_XMMINTRIN_H)
++#if defined(HAVE_XMMINTRIN_H) && defined(__SSE__)
+     if (gfc->CPU_features.SSE)
+         gfc->init_xrpow_core = init_xrpow_core_sse;
+ #endif
+--- a/libmp3lame/vector/xmm_quantize_sub.c
++++ b/libmp3lame/vector/xmm_quantize_sub.c
+@@ -32,7 +32,7 @@
+ 
+ 
+ 
+-#ifdef HAVE_XMMINTRIN_H
++#if defined(HAVE_XMMINTRIN_H) || defined(__SSE__)
+ 
+ #include <xmmintrin.h>
+ 
