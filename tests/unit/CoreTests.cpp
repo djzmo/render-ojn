@@ -203,7 +203,16 @@ TEST_CASE("CLI accepts help anywhere and rejects invalid values") {
     CHECK(renderojn::app::parse_cli({"--wat", "--help"}).help);
     CHECK_THROWS_AS(renderojn::app::parse_cli({"song.ojn", "--difficulty", "H"}), renderojn::Error);
     CHECK_THROWS_AS(renderojn::app::parse_cli({"song.ojn", "--quality", "4"}), renderojn::Error);
+    CHECK_THROWS_AS(renderojn::app::parse_cli({"song.ojn", "--tracks", "bgm"}), renderojn::Error);
     CHECK_THROWS_AS(renderojn::app::parse_cli({"song.ojn", "--wat"}), renderojn::Error);
+}
+
+TEST_CASE("CLI parses the track selection and defaults to all") {
+    using renderojn::render::TrackSelection;
+    CHECK(renderojn::app::parse_cli({"song.ojn"}).tracks == TrackSelection::All);
+    CHECK(renderojn::app::parse_cli({"song.ojn", "--tracks", "all"}).tracks == TrackSelection::All);
+    CHECK(renderojn::app::parse_cli({"song.ojn", "--tracks", "keysounds"}).tracks == TrackSelection::Keysounds);
+    CHECK(renderojn::app::parse_cli({"song.ojn", "--tracks", "background"}).tracks == TrackSelection::Background);
 }
 
 TEST_CASE("CLI output extensions are exact and never duplicated") {
@@ -288,6 +297,28 @@ TEST_CASE("OJN integrates BPM changes in chronological order rather than channel
     CHECK(chart.notes[1].slot_index == 3);
     CHECK(chart.notes[1].slot_count == 4);
     CHECK(chart.notes[1].frame == 96000);
+}
+
+TEST_CASE("OJN classifies channels 2-8 as keysounds and 9+ as background") {
+    using renderojn::test_fixture::ojn_record;
+    renderojn::test_fixture::OrdinaryOjnSpec spec;
+    spec.durations = {{3, 3, 3}};
+    // Two events, one note: the channel-9 background event counts toward the
+    // event total but not the note total, exactly as the parser validates.
+    spec.counts[2] = {2, 1, 1, 2};
+    spec.hard_packages = {{0, 2, 1, {ojn_record(1)}}, {0, 9, 1, {ojn_record(2)}}};
+
+    const auto chart = renderojn::format::parse_ojn_chart(renderojn::test_fixture::ordinary_ojn(spec), renderojn::format::Difficulty::Hard);
+    REQUIRE(chart.notes.size() == 2);
+    // Sorted by frame; both sit at measure 0, so match on reference id.
+    const auto keysound = std::find_if(chart.notes.begin(), chart.notes.end(),
+                                       [](const auto& note) { return note.reference_id == 1; });
+    const auto background = std::find_if(chart.notes.begin(), chart.notes.end(),
+                                         [](const auto& note) { return note.reference_id == 2; });
+    REQUIRE(keysound != chart.notes.end());
+    REQUIRE(background != chart.notes.end());
+    CHECK(keysound->is_keysound);
+    CHECK_FALSE(background->is_keysound);
 }
 
 TEST_CASE("OJN header counts bound package parsing and validate chart totals") {

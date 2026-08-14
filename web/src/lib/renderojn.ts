@@ -81,6 +81,41 @@ export const QUALITY_VALUES: readonly Quality[] = [1, 2, 3]
 /** The CLI's default (`src/app/Cli.hpp`). */
 export const DEFAULT_QUALITY: Quality = 3
 
+/**
+ * Which note roles to sound. All three renders are the same length: the
+ * unselected notes are muted, not removed, so timing is preserved (see
+ * `render::TrackSelection` in `src/core/render/Mixer.hpp`). Keysounds are the
+ * playable lanes; Background is the autoplay/BGM stream. A chart may have an
+ * empty role, which renders silence — the core warns when that happens.
+ */
+export type Tracks = "all" | "keysounds" | "background"
+
+export const TRACKS_OPTIONS: readonly Tracks[] = ["all", "keysounds", "background"]
+
+/** Mirrors `render::TrackSelection` in `src/core/render/Mixer.hpp`. */
+export const TRACKS_VALUES: Record<Tracks, 0 | 1 | 2> = {
+  all: 0,
+  keysounds: 1,
+  background: 2,
+}
+
+/** Short control labels. */
+export const TRACKS_LABELS: Record<Tracks, string> = {
+  all: "All",
+  keysounds: "Keys",
+  background: "BGM",
+}
+
+/** Long form for the control's tooltips and description. */
+export const TRACKS_DETAIL: Record<Tracks, string> = {
+  all: "Every note — the full mix",
+  keysounds: "Playable lanes only — the notes you hit",
+  background: "Autoplay/BGM only — varies by chart, may have gaps",
+}
+
+/** Matches the CLI default (`--tracks all`). */
+export const DEFAULT_TRACKS: Tracks = "all"
+
 /** Fraction in [0, 1]. Posted from the mixer's PcmConsumer callback. */
 export type ProgressCallback = (fraction: number) => void
 
@@ -106,6 +141,7 @@ export interface RenderOjnModule {
     difficulty: Difficulty,
     format: OutputFormat,
     quality: Quality,
+    tracks: Tracks,
     onProgress: ProgressCallback
   ): Promise<RenderResult>
 }

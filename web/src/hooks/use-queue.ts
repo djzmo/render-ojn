@@ -15,12 +15,14 @@ import { createZip } from "@/lib/zip"
 import {
   DEFAULT_DIFFICULTY,
   DEFAULT_QUALITY,
+  DEFAULT_TRACKS,
   DIFFICULTY_NAMES,
   loadRenderOjn,
   MIME_TYPES,
   type Difficulty,
   type OutputFormat,
   type Quality,
+  type Tracks,
 } from "@/lib/renderojn"
 
 let nextId = 0
@@ -57,6 +59,7 @@ export function useQueue() {
   const [packages, setPackages] = React.useState<SamplePackage[]>([])
   const [format, setFormatState] = React.useState<OutputFormat>("ogg")
   const [quality, setQualityState] = React.useState<Quality>(DEFAULT_QUALITY)
+  const [tracks, setTracksState] = React.useState<Tracks>(DEFAULT_TRACKS)
   const [rejected, setRejected] = React.useState<string[]>([])
   // Building the archive copies every rendered file; on a long queue that is
   // slow enough to need its own state so the button can say so.
@@ -228,6 +231,16 @@ export function useQueue() {
     [discardResults]
   )
 
+  const setTracks = React.useCallback(
+    (next: Tracks) => {
+      // A different track selection is a different render; drop stale results
+      // just as format and quality do.
+      setTracksState(next)
+      discardResults()
+    },
+    [discardResults]
+  )
+
   const setDifficulty = React.useCallback(
     (id: string, difficulty: Difficulty) => {
       updateChart(id, (chart) => {
@@ -256,6 +269,7 @@ export function useQueue() {
       // mislabel the result or give the blob the wrong MIME type.
       const renderFormat = format
       const renderQuality = quality
+      const renderTracks = tracks
 
       updateChart(id, (chart) => ({
         ...chart,
@@ -275,6 +289,7 @@ export function useQueue() {
           difficulty,
           renderFormat,
           renderQuality,
+          renderTracks,
           (progress) => {
             updateChart(id, (chart) =>
               chart.render.status === "rendering"
@@ -317,7 +332,7 @@ export function useQueue() {
         })
       }
     },
-    [format, quality, updateChart]
+    [format, quality, tracks, updateChart]
   )
 
   /**
@@ -443,6 +458,8 @@ export function useQueue() {
     setFormat,
     quality,
     setQuality,
+    tracks,
+    setTracks,
     rejected,
     dismissRejected,
     addFiles,

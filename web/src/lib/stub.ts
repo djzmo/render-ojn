@@ -17,6 +17,7 @@ import {
   type Quality,
   type RenderOjnModule,
   type RenderResult,
+  type Tracks,
 } from "./renderojn"
 
 const TITLES = [
@@ -126,6 +127,9 @@ async function render(
   difficulty: Difficulty,
   format: OutputFormat,
   quality: Quality,
+  // Accepted to match the real module's signature; the fake output does not
+  // vary by role, but the parameter must exist so callers type-check.
+  _tracks: Tracks,
   onProgress: ProgressCallback
 ): Promise<RenderResult> {
   const steps = 40

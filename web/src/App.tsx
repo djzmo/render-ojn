@@ -29,6 +29,8 @@ export default function App() {
             onFormatChange={queue.setFormat}
             quality={queue.quality}
             onQualityChange={queue.setQuality}
+            tracks={queue.tracks}
+            onTracksChange={queue.setTracks}
             rejected={queue.rejected}
             onDismissRejected={queue.dismissRejected}
             onFiles={queue.addFiles}

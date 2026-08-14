@@ -22,8 +22,21 @@ struct Voice {
     std::size_t cursor{};
 };
 
+bool note_selected(const format::NoteEvent& event, TrackSelection tracks) {
+    switch (tracks) {
+        case TrackSelection::Keysounds: return event.is_keysound;
+        case TrackSelection::Background: return !event.is_keysound;
+        case TrackSelection::All: break;
+    }
+    return true;
+}
+
 void add_voice(const format::NoteEvent& event, const std::unordered_map<std::uint16_t, const format::DecodedSample*>& samples,
-               std::vector<Voice>& voices, Diagnostics& diagnostics) {
+               std::vector<Voice>& voices, Diagnostics& diagnostics, TrackSelection tracks) {
+    // Muting an unselected note here, rather than filtering chart.notes upstream,
+    // is what keeps every mode the same length: the scheduling loop still walks
+    // the whole event list and output_frame_count still sees the final onset.
+    if (!note_selected(event, tracks)) return;
     if (event.note_type == 3) return;
     const auto requested = static_cast<std::uint32_t>(event.reference_id) + (event.note_type == 4 ? 1000U : 0U);
     if (requested > std::numeric_limits<std::uint16_t>::max()) {
@@ -86,7 +99,17 @@ std::uint64_t output_frame_count(const format::Chart& chart) {
 }
 
 void mix_chart(const format::Chart& chart, const std::vector<format::DecodedSample>& samples, SchedulingMode mode,
-               bool wall_clock_pacing, const PcmConsumer& consumer, Diagnostics& diagnostics) {
+               bool wall_clock_pacing, const PcmConsumer& consumer, Diagnostics& diagnostics, TrackSelection tracks) {
+    // A track selection that matches no note in this chart is not an error --
+    // some charts carry no background events at all, and every playable-only
+    // chart has an empty background stream -- but it renders silence, so say so
+    // rather than hand back a valid-looking but empty file.
+    if (tracks != TrackSelection::All &&
+        std::none_of(chart.notes.begin(), chart.notes.end(),
+                     [tracks](const format::NoteEvent& note) { return note_selected(note, tracks); })) {
+        diagnostics.warn(tracks == TrackSelection::Keysounds ? "chart has no keysound notes; output will be silent"
+                                                             : "chart has no background notes; output will be silent");
+    }
     std::unordered_map<std::uint16_t, const format::DecodedSample*> sample_index;
     for (const auto& sample : samples) {
         if (sample.stereo_frames.size() % 2U != 0) throw Error(ExitCode::Runtime, "Internal sample has a non-stereo frame count");
@@ -112,7 +135,7 @@ void mix_chart(const format::Chart& chart, const std::vector<format::DecodedSamp
             block.assign(frames * 2U, 0.0F);
             const auto block_end = frame + frames;
             while (event_index < chart.notes.size() && chart.notes[event_index].frame <= frame) {
-                add_voice(chart.notes[event_index++], sample_index, voices, diagnostics);
+                add_voice(chart.notes[event_index++], sample_index, voices, diagnostics, tracks);
             }
 
             std::size_t span_start{};
@@ -124,7 +147,7 @@ void mix_chart(const format::Chart& chart, const std::vector<format::DecodedSamp
                 mix_span(voices, block, span_start, target_offset - span_start);
                 span_start = target_offset;
                 do {
-                    add_voice(chart.notes[event_index++], sample_index, voices, diagnostics);
+                    add_voice(chart.notes[event_index++], sample_index, voices, diagnostics, tracks);
                 } while (event_index < chart.notes.size() && chart.notes[event_index].frame == target_frame);
             }
             mix_span(voices, block, span_start, frames - span_start);
@@ -134,7 +157,7 @@ void mix_chart(const format::Chart& chart, const std::vector<format::DecodedSamp
             // mode does; see docs/compatibility.md and the "realtime scheduler
             // retains 48-frame onset quantization" test, which pins this.
             while (event_index < chart.notes.size() && chart.notes[event_index].frame <= frame) {
-                add_voice(chart.notes[event_index++], sample_index, voices, diagnostics);
+                add_voice(chart.notes[event_index++], sample_index, voices, diagnostics, tracks);
             }
             block.assign(frames * 2U, 0.0F);
             mix_span(voices, block, 0, frames);

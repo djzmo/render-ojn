@@ -108,7 +108,7 @@ int main(int argc, char** argv) {
                                                        options.quality, tags,
                                                        [&](const auto& consumer) {
                                                            renderojn::render::mix_chart(compatible_chart, samples, mode, mode == renderojn::render::SchedulingMode::Realtime,
-                                                                                        consumer, diagnostics);
+                                                                                        consumer, diagnostics, options.tracks);
                                                        });
         }
         print_warnings(diagnostics);

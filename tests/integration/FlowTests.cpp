@@ -40,14 +40,15 @@ renderojn::format::Chart chart_with_notes(std::vector<renderojn::format::NoteEve
 std::vector<float> render(const renderojn::format::Chart& chart,
                           const std::vector<renderojn::format::DecodedSample>& samples,
                           renderojn::render::SchedulingMode mode, renderojn::Diagnostics& diagnostics,
-                          std::vector<std::size_t>* delivered_blocks = nullptr) {
+                          std::vector<std::size_t>* delivered_blocks = nullptr,
+                          renderojn::render::TrackSelection tracks = renderojn::render::TrackSelection::All) {
     std::vector<float> output;
     renderojn::render::mix_chart(chart, samples, mode, false,
                                   [&](const float* frames, std::size_t count) {
                                       output.insert(output.end(), frames, frames + count * 2U);
                                       if (delivered_blocks != nullptr) delivered_blocks->push_back(count);
                                   },
-                                  diagnostics);
+                                  diagnostics, tracks);
     return output;
 }
 
@@ -151,6 +152,57 @@ TEST_CASE("quick scheduler keeps the 100-voice drop-newest policy") {
     CHECK(output[0] == 50.0F);
     REQUIRE(diagnostics.warnings().size() == 1U);
     CHECK(diagnostics.warnings().front() == "voice limit reached; dropping newest trigger");
+}
+
+TEST_CASE("track selection sounds only the chosen role without changing length") {
+    using renderojn::render::SchedulingMode;
+    using renderojn::render::TrackSelection;
+    // A keysound note (sample 1 at frame 0) and a background note (sample 2 at
+    // frame 10). The last field of each NoteEvent is is_keysound.
+    const auto chart = chart_with_notes({{0, 1, 0, 0, 0, 1, true}, {10, 2, 0, 0, 1, 1, false}});
+    const std::vector<renderojn::format::DecodedSample> samples{{1, {1.0F, 1.0F}}, {2, {1.0F, 1.0F}}};
+
+    renderojn::Diagnostics all_diag;
+    const auto all = render(chart, samples, SchedulingMode::Quick, all_diag, nullptr, TrackSelection::All);
+    renderojn::Diagnostics keys_diag;
+    const auto keys = render(chart, samples, SchedulingMode::Quick, keys_diag, nullptr, TrackSelection::Keysounds);
+    renderojn::Diagnostics bg_diag;
+    const auto bg = render(chart, samples, SchedulingMode::Quick, bg_diag, nullptr, TrackSelection::Background);
+
+    // Muting, not filtering: every mode is exactly as long as the full mix.
+    const auto expected = renderojn::render::output_frame_count(chart) * 2U;
+    REQUIRE(all.size() == expected);
+    REQUIRE(keys.size() == expected);
+    REQUIRE(bg.size() == expected);
+
+    // All sounds both onsets; keysounds keeps only the frame-0 hit; background
+    // keeps only the frame-10 hit.
+    CHECK(all[0] == 1.0F);
+    CHECK(all[10U * 2U] == 1.0F);
+    CHECK(keys[0] == 1.0F);
+    CHECK(keys[10U * 2U] == 0.0F);
+    CHECK(bg[0] == 0.0F);
+    CHECK(bg[10U * 2U] == 1.0F);
+
+    // A populated selection never warns about silence.
+    CHECK(keys_diag.warnings().empty());
+    CHECK(bg_diag.warnings().empty());
+}
+
+TEST_CASE("a track selection matching no note warns that the output is silent") {
+    using renderojn::render::SchedulingMode;
+    using renderojn::render::TrackSelection;
+    // Keysound-only chart: selecting background matches nothing.
+    const auto chart = chart_with_notes({{0, 1, 0, 0, 0, 1, true}});
+    const std::vector<renderojn::format::DecodedSample> samples{{1, {1.0F, 1.0F}}};
+
+    renderojn::Diagnostics diagnostics;
+    const auto bg = render(chart, samples, SchedulingMode::Quick, diagnostics, nullptr, TrackSelection::Background);
+    // Still a full-length, valid buffer -- just silent.
+    CHECK(bg.size() == renderojn::render::output_frame_count(chart) * 2U);
+    CHECK(bg[0] == 0.0F);
+    REQUIRE(diagnostics.warnings().size() == 1U);
+    CHECK(diagnostics.warnings().front() == "chart has no background notes; output will be silent");
 }
 
 TEST_CASE("transactional WAV failure preserves an existing destination") {

@@ -38,6 +38,12 @@ struct NoteEvent {
     std::uint32_t measure{};
     std::uint16_t slot_index{};
     std::uint16_t slot_count{};
+    // The chart carries each note on a channel: 2-8 are the playable lanes the
+    // player hits (keysounds), 9+ are autoplay/background events the game
+    // triggers on its own. The parser knows this only while reading the event
+    // stream; recording it here is what lets the mixer render one role in
+    // isolation (see render::TrackSelection).
+    bool is_keysound{};
 };
 
 struct Chart {

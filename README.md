@@ -3,7 +3,7 @@ Renders O2Jam OJN/OJM to MP3/WAV/OGG music file
 
 - **Author**: Yana Nugraha
 - **Author Homepage**: http://djzmo.com
-- **Latest Version**: 1.0.1
+- **Latest Version**: 1.0.2
 
 --------------------------------------------------------------------------------------------------
 
@@ -26,6 +26,12 @@ See it in action: https://www.youtube.com/watch?v=snYnd_IvmbM
   keysounded music no longer loses timing accuracy the way it did before v1.0.0.
 
 ## Version History ##
+
+### v1.0.2
+- Added `--tracks` to render one note role in isolation: `keysounds` for the
+  playable lanes, `background` for the autoplay/BGM stream, or `all` (the
+  default). All three keep the chart's original length. The web app exposes the
+  same choice as a Tracks control.
 
 ### v1.0.1
 - Supports Korea-era encrypted `new` OJN wrappers, which previously could not
@@ -62,6 +68,12 @@ Rendering Options:
 
 ```
   --rendermode <mode>       Rendering Mode (quick, realtime). Default: quick
+  --tracks <selection>      Which notes to sound (all, keysounds, background).
+                            Default: all. keysounds are the playable lanes;
+                            background is the autoplay/BGM stream. All three
+                            keep the same length. Background fidelity varies by
+                            chart: O2Jam charts share samples between roles, so
+                            a background render is not a mastered instrumental.
   --format <format>         Output Format (wav, mp3, ogg). Default: mp3
   --outfile <filename>      Output Filename. Default: <inputfile>.<format>
   --quality <quality>       Output Quality (for mp3 and ogg). Default: 3
@@ -83,6 +95,8 @@ Example:
 ```
 RenderOJN o2ma100.ojn --outfile BachAlive.mp3 --quality 2
 RenderOJN o2ma100.ojn --rendermode realtime --format wav
+RenderOJN o2ma100.ojn --tracks keysounds --format wav
+RenderOJN o2ma100.ojn --tracks background --outfile BachAlive-bgm.mp3
 RenderOJN o2ma100.ojn --play
 RenderOJN --help
 ```

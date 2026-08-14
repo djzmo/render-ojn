@@ -40,6 +40,7 @@ struct RawEvent {
     std::uint8_t note_type{};
     float scalar_value{};
     std::uint64_t ordinal{};
+    bool is_keysound{};
 };
 
 struct TimelineEvent {
@@ -247,11 +248,17 @@ Chart parse_ojn_chart(const std::shared_ptr<const io::ByteBuffer>& buffer, Diffi
             if (channel >= 2 && first != 0) {
                 ++event_count;
                 if (event_count > kMaxEvents) malformed("event count exceeds limit");
-                if (channel <= 8) {
+                // Channels 2-8 are the playable lanes (keysounds); 9+ are the
+                // autoplay/background events. This is the same boundary the note
+                // count is validated against, now retained per note so the mixer
+                // can render one role in isolation.
+                const bool is_keysound = channel <= 8;
+                if (is_keysound) {
                     ++note_count;
                     if (note_count > kMaxEvents) malformed("note count exceeds limit");
                 }
-                raw_events.push_back({RawKind::Note, measure, static_cast<std::uint16_t>(event_index), count, first, third, 0.0F, ordinal++});
+                raw_events.push_back(
+                    {RawKind::Note, measure, static_cast<std::uint16_t>(event_index), count, first, third, 0.0F, ordinal++, is_keysound});
             }
         }
     }
@@ -311,7 +318,7 @@ Chart parse_ojn_chart(const std::shared_ptr<const io::ByteBuffer>& buffer, Diffi
         const auto frame = seconds_to_frame(seconds);
         if (frame >= absolute_frame_limit) malformed("event occurs beyond the six-hour output limit");
         chart.notes.push_back({frame, timeline_event.event.reference_id, timeline_event.event.note_type, timeline_event.event.measure,
-                               timeline_event.event.slot_index, timeline_event.event.slot_count});
+                               timeline_event.event.slot_index, timeline_event.event.slot_count, timeline_event.event.is_keysound});
     }
 
     for (const auto& event : chart.notes) {

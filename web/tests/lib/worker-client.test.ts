@@ -113,6 +113,7 @@ test("progress messages report without settling the request", async () => {
     2,
     "ogg",
     3,
+    "all",
     (fraction) => seen.push(fraction)
   )
 
@@ -206,7 +207,7 @@ test("a render transfers the caller's own buffers rather than copying them", asy
   const ojn = new Uint8Array([1, 2, 3, 4])
   const ojm = new Uint8Array([5, 6, 7, 8])
 
-  void client.render(ojn, ojm, 2, "ogg", 3, () => {}).catch(() => {})
+  void client.render(ojn, ojm, 2, "ogg", 3, "all", () => {}).catch(() => {})
 
   const { transfer } = latest().posted[0]
   expect(transfer).toHaveLength(2)
@@ -228,7 +229,7 @@ test("the format crosses as its name and is mapped inside the worker", async () 
   // FORMAT_VALUES is applied worker-side; the client posts the string so the
   // enum mapping lives in exactly one place.
   const client = await freshClient()
-  void client.render(new Uint8Array([1]), new Uint8Array([2]), 2, "ogg", 3, () => {}).catch(
+  void client.render(new Uint8Array([1]), new Uint8Array([2]), 2, "ogg", 3, "all", () => {}).catch(
     () => {}
   )
 

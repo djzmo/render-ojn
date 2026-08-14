@@ -53,6 +53,14 @@ Options parse_cli(const std::vector<std::string>& arguments) {
             else usage_error("Invalid --difficulty value: " + value);
             continue;
         }
+        if (!positional_only && token == "--tracks") {
+            const auto value = take_value(arguments, index, token);
+            if (value == "all") result.tracks = render::TrackSelection::All;
+            else if (value == "keysounds") result.tracks = render::TrackSelection::Keysounds;
+            else if (value == "background") result.tracks = render::TrackSelection::Background;
+            else usage_error("Invalid --tracks value: " + value);
+            continue;
+        }
         if (!positional_only && token == "--rendermode") {
             const auto value = take_value(arguments, index, token);
             if (value == "quick") result.render_mode = RenderMode::Quick;
@@ -107,9 +115,12 @@ std::string banner() {
 
 std::string usage() {
     return "Usage: RenderOJN <input.ojn> [--difficulty e|n|h] [--rendermode quick|realtime]\n"
+           "                 [--tracks all|keysounds|background]\n"
            "                 [--format wav|mp3|ogg] [--outfile <path>] [--quality 1|2|3]\n"
            "                 [--sample-package <path>] [--play] [--help]\n"
-           "\nDefaults: difficulty h, rendermode quick, format mp3, quality 3.\n";
+           "\nDefaults: difficulty h, rendermode quick, tracks all, format mp3, quality 3.\n"
+           "\n--tracks selects which notes to sound: keysounds are the playable lanes,\n"
+           "background is the autoplay/BGM stream. All modes keep the same length.\n";
 }
 
 void collect_play_warnings(const Options& options, Diagnostics& diagnostics) {
@@ -117,6 +128,7 @@ void collect_play_warnings(const Options& options, Diagnostics& diagnostics) {
     if (options.format_set) diagnostics.warn("--format is ignored by --play");
     if (options.output_set) diagnostics.warn("--outfile is ignored by --play");
     if (options.quality_set) diagnostics.warn("--quality is ignored by --play");
+    if (options.tracks != render::TrackSelection::All) diagnostics.warn("--tracks is ignored by --play; all notes are played");
     if (options.render_mode_set) diagnostics.warn("--rendermode is ignored by --play; realtime playback is used");
 }
 

@@ -121,7 +121,7 @@ OjnInfo read_ojn_info(const emscripten::val& ojn_bytes) {
 // Named render_chart rather than render: `using namespace renderojn` makes the
 // renderojn::render namespace visible, and a bare `render` is ambiguous.
 RenderResult render_chart(const emscripten::val& ojn_bytes, const emscripten::val& ojm_bytes, int difficulty,
-                          int format_value, int quality, emscripten::val on_progress) {
+                          int format_value, int quality, int tracks, emscripten::val on_progress) {
     Diagnostics diagnostics;
 
     if (difficulty < 0 || difficulty > 2) {
@@ -129,6 +129,10 @@ RenderResult render_chart(const emscripten::val& ojn_bytes, const emscripten::va
     }
     if (format_value < 0 || format_value > 2) {
         throw_js_error("Output format must be 0 (WAV), 1 (MP3), or 2 (OGG)");
+    }
+    // Mirrors render::TrackSelection {All = 0, Keysounds = 1, Background = 2}.
+    if (tracks < 0 || tracks > 2) {
+        throw_js_error("Tracks must be 0 (All), 1 (Keysounds), or 2 (Background)");
     }
     // Same range the CLI enforces (src/app/Cli.cpp).  Without this an
     // out-of-range value falls through to the lowest bitrate tier in
@@ -183,7 +187,7 @@ RenderResult render_chart(const emscripten::val& ojn_bytes, const emscripten::va
                                                   static_cast<double>(total_frames));
                                   }
                               },
-                              diagnostics);
+                              diagnostics, static_cast<render::TrackSelection>(tracks));
         });
 
     RenderResult result;
@@ -218,9 +222,9 @@ OjnInfo read_ojn_info_js(const emscripten::val& ojn_bytes) {
 }
 
 RenderResult render_chart_js(const emscripten::val& ojn_bytes, const emscripten::val& ojm_bytes, int difficulty,
-                             int format_value, int quality, emscripten::val on_progress) {
+                             int format_value, int quality, int tracks, emscripten::val on_progress) {
     return with_js_errors(
-        [&] { return render_chart(ojn_bytes, ojm_bytes, difficulty, format_value, quality, on_progress); });
+        [&] { return render_chart(ojn_bytes, ojm_bytes, difficulty, format_value, quality, tracks, on_progress); });
 }
 
 } // namespace

@@ -22,9 +22,13 @@ import {
   QUALITY_DETAIL,
   QUALITY_LABELS,
   QUALITY_VALUES,
+  TRACKS_DETAIL,
+  TRACKS_LABELS,
+  TRACKS_OPTIONS,
   type Difficulty,
   type OutputFormat,
   type Quality,
+  type Tracks,
 } from "@/lib/renderojn"
 
 interface RenderQueueProps {
@@ -34,6 +38,8 @@ interface RenderQueueProps {
   onFormatChange: (format: OutputFormat) => void
   quality: Quality
   onQualityChange: (quality: Quality) => void
+  tracks: Tracks
+  onTracksChange: (tracks: Tracks) => void
   rejected: string[]
   onDismissRejected: () => void
   onFiles: (files: File[]) => void
@@ -56,6 +62,8 @@ export function RenderQueue({
   onFormatChange,
   quality,
   onQualityChange,
+  tracks,
+  onTracksChange,
   rejected,
   onDismissRejected,
   onFiles,
@@ -167,6 +175,41 @@ export function RenderQueue({
               {format === "wav"
                 ? "Bitrate does not apply to WAV, which is uncompressed."
                 : QUALITY_DETAIL[quality]}
+            </span>
+
+            <Separator orientation="vertical" className="hidden h-6 sm:block" />
+
+            {/*
+             * Which note roles to sound. Keysounds are the playable lanes; BGM
+             * is the autoplay/background stream. Every mode is the same length —
+             * unselected notes are muted, not removed. Background fidelity is
+             * chart-dependent (samples are shared between roles), so the tooltip
+             * says so rather than promising a clean instrumental.
+             */}
+            <ToggleGroup
+              value={[tracks]}
+              onValueChange={(value) => {
+                if (value.length) onTracksChange(value[0] as Tracks)
+              }}
+              variant="outline"
+              size="sm"
+              spacing={0}
+              aria-label="Tracks"
+              aria-describedby="tracks-note"
+            >
+              {TRACKS_OPTIONS.map((option) => (
+                <ToggleGroupItem
+                  key={option}
+                  value={option}
+                  title={TRACKS_DETAIL[option]}
+                >
+                  {TRACKS_LABELS[option]}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+
+            <span id="tracks-note" className="sr-only">
+              {TRACKS_DETAIL[tracks]}
             </span>
           </div>
         </CardHeader>

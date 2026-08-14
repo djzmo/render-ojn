@@ -16,6 +16,7 @@ import {
   type Quality,
   type RenderOjnModule,
   type RenderResult,
+  type Tracks,
 } from "./renderojn"
 
 interface Pending {
@@ -124,10 +125,11 @@ export function createWorkerModule(): RenderOjnModule {
       difficulty: Difficulty,
       format: OutputFormat,
       quality: Quality,
+      tracks: Tracks,
       onProgress: ProgressCallback
     ): Promise<RenderResult> {
       const { value, warnings } = await send(
-        { kind: "render", ojn, ojm, difficulty, format, quality },
+        { kind: "render", ojn, ojm, difficulty, format, quality, tracks },
         [ojn.buffer, ojm.buffer],
         onProgress
       )

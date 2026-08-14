@@ -2,6 +2,7 @@
 
 #include "core/Diagnostic.hpp"
 #include "core/format/Types.hpp"
+#include "core/render/Mixer.hpp"
 
 #include <filesystem>
 #include <optional>
@@ -18,6 +19,7 @@ struct Options {
     format::Difficulty difficulty{format::Difficulty::Hard};
     RenderMode render_mode{RenderMode::Quick};
     OutputFormat output_format{OutputFormat::Mp3};
+    render::TrackSelection tracks{render::TrackSelection::All};
     int quality{3};
     bool play{};
     bool help{};

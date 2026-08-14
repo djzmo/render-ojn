@@ -14,7 +14,14 @@
 import createRenderOJN from "@/wasm/renderojn.js"
 import wasmUrl from "@/wasm/renderojn.wasm?url"
 
-import { FORMAT_VALUES, type Difficulty, type OutputFormat, type Quality } from "@/lib/renderojn"
+import {
+  FORMAT_VALUES,
+  TRACKS_VALUES,
+  type Difficulty,
+  type OutputFormat,
+  type Quality,
+  type Tracks,
+} from "@/lib/renderojn"
 
 interface EmscriptenModule {
   readOjnInfo(bytes: Uint8Array): RawOjnInfo
@@ -24,6 +31,7 @@ interface EmscriptenModule {
     difficulty: number,
     format: number,
     quality: number,
+    tracks: number,
     onProgress: ((fraction: number) => void) | undefined
   ): RawRenderResult
   getExceptionMessage?(pointer: number): string[]
@@ -69,6 +77,7 @@ export type WorkerRequest =
       difficulty: Difficulty
       format: OutputFormat
       quality: Quality
+      tracks: Tracks
     }
 
 export type WorkerResponse =
@@ -156,6 +165,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       request.difficulty,
       FORMAT_VALUES[request.format],
       request.quality,
+      TRACKS_VALUES[request.tracks],
       (fraction) => post({ id: request.id, kind: "progress", fraction })
     )
 
