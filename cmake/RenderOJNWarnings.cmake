@@ -1,6 +1,6 @@
 function(renderojn_apply_warnings target)
   if(MSVC)
-    target_compile_options(${target} PRIVATE /W4 /permissive- /EHsc)
+    target_compile_options(${target} PRIVATE /W4 /permissive- /EHsc /utf-8)
   else()
     target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   endif()

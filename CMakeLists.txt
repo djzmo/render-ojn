@@ -33,6 +33,8 @@ set(RENDEROJN_CORE_SOURCES
     src/core/crypto/Sha256.cpp
     src/core/compat/CompatibilityProfile.cpp
     src/core/format/OjnParser.cpp
+    src/core/text/Cp949.cpp
+    src/core/text/Cp949Table.cpp
     src/core/format/PackageParser.cpp
     src/core/audio/Decoder.cpp
     src/core/audio/OggNormalizer.cpp
@@ -135,7 +137,7 @@ endif()
 
 if(BUILD_TESTING AND RENDEROJN_BUILD_TESTS)
   find_package(Catch2 3 CONFIG REQUIRED)
-  add_executable(renderojn_tests tests/unit/CoreTests.cpp tests/integration/FlowTests.cpp)
+  add_executable(renderojn_tests tests/unit/CoreTests.cpp tests/unit/TextTests.cpp tests/integration/FlowTests.cpp)
   target_link_libraries(renderojn_tests PRIVATE renderojn_core Catch2::Catch2WithMain)
   add_test(NAME renderojn_tests COMMAND renderojn_tests)
 endif()
