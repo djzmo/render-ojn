@@ -3,7 +3,7 @@ Renders O2Jam OJN/OJM to MP3/WAV/OGG music file
 
 - **Author**: Yana Nugraha
 - **Author Homepage**: http://djzmo.com
-- **Latest Version**: 1.0.2
+- **Latest Version**: 1.0.3
 
 --------------------------------------------------------------------------------------------------
 
@@ -26,6 +26,26 @@ See it in action: https://www.youtube.com/watch?v=snYnd_IvmbM
   keysounded music no longer loses timing accuracy the way it did before v1.0.0.
 
 ## Version History ##
+
+### v1.0.3
+- Korean and Japanese titles, artists and charter names are decoded from the
+  OJN's CP949 text and written to the MP3/Ogg tags as UTF-8, so they no longer
+  come out as mojibake. The web app shows and names files by the real title.
+- Windows builds accept non-ASCII input paths and `--outfile` names, which
+  previously failed with "Unable to create temporary output".
+- Default output name is now `<input stem>.<format>` (`o2ma100.mp3`, not
+  `o2ma100.ojn.mp3`), and `--tracks keysounds` / `--tracks background` add
+  `_keysounds` / `_background` so a stem render never overwrites the full mix.
+  The web app names its downloads the same way.
+- Added `--title-as-filename` to name the output after the chart's title, and
+  `--outdir` to choose the folder.
+- A folder can be given instead of a file: every `.ojn` in it is rendered into
+  `<folder>/render` (or `--outdir`), one after another, with a summary at the
+  end.
+- The chart's cover art is embedded in MP3 (ID3v2 APIC) and Ogg
+  (METADATA_BLOCK_PICTURE) output; `--no-cover-art` leaves it out.
+- The web app's format, bitrate and tracks controls now show the active
+  choice clearly.
 
 ### v1.0.2
 - Added `--tracks` to render one note role in isolation: `keysounds` for the
@@ -75,7 +95,15 @@ Rendering Options:
                             chart: O2Jam charts share samples between roles, so
                             a background render is not a mastered instrumental.
   --format <format>         Output Format (wav, mp3, ogg). Default: mp3
-  --outfile <filename>      Output Filename. Default: <inputfile>.<format>
+  --outfile <filename>      Output Filename. Default: <input stem>.<format>,
+                            with _keysounds or _background appended for a
+                            --tracks stem. The extension is optional and
+                            follows --format.
+  --outdir <folder>         Folder for the output. Default: beside the input
+                            (or <folder>/render for a folder input)
+  --title-as-filename       Name the output after the chart's title rather
+                            than the input file
+  --no-cover-art            Do not embed the chart's cover art in MP3/Ogg tags
   --quality <quality>       Output Quality (for mp3 and ogg). Default: 3
                             3 - Best, 2 - Standard, 1 - Poor
 ```
@@ -96,13 +124,16 @@ Example:
 RenderOJN o2ma100.ojn --outfile BachAlive.mp3 --quality 2
 RenderOJN o2ma100.ojn --rendermode realtime --format wav
 RenderOJN o2ma100.ojn --tracks keysounds --format wav
-RenderOJN o2ma100.ojn --tracks background --outfile BachAlive-bgm.mp3
+RenderOJN o2ma100.ojn --tracks background         (writes o2ma100_background.mp3)
+RenderOJN o2ma100.ojn --title-as-filename         (writes Bach Alive.mp3)
+RenderOJN "C:\O2Jam\Music" --title-as-filename    (renders every .ojn into C:\O2Jam\Music\render)
 RenderOJN o2ma100.ojn --play
 RenderOJN --help
 ```
 
 Values are lowercase and case-sensitive. Success exits 0, runtime and input
-errors exit 1, and usage errors exit 2. Output is written to a temporary file
+errors exit 1, and usage errors exit 2. A folder input renders each `.ojn` in
+turn, reports any that fail, and exits 1 if one did. Output is written to a temporary file
 first and published only after rendering, encoding, and tagging all succeed, so
 a failed run never leaves a partial file behind.
 
