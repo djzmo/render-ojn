@@ -116,6 +116,18 @@ export const TRACKS_DETAIL: Record<Tracks, string> = {
 /** Matches the CLI default (`--tracks all`). */
 export const DEFAULT_TRACKS: Tracks = "all"
 
+/**
+ * Filename suffix for a track selection, mirroring the CLI's
+ * `<stem>_keysounds.<ext>` / `<stem>_background.<ext>`: the parameter name
+ * itself, and nothing for the full mix, so a stem never overwrites the mix
+ * beside it.
+ */
+export const TRACK_SUFFIX: Record<Tracks, string> = {
+  all: "",
+  keysounds: "_keysounds",
+  background: "_background",
+}
+
 /** Fraction in [0, 1]. Posted from the mixer's PcmConsumer callback. */
 export type ProgressCallback = (fraction: number) => void
 

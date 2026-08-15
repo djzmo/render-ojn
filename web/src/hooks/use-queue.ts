@@ -316,6 +316,7 @@ export function useQueue() {
             url,
             size: bytes.length,
             format: renderFormat,
+            tracks: renderTracks,
           },
         }))
         toast.success(`Rendered ${target.info.title}`, {
@@ -418,7 +419,8 @@ export function useQueue() {
           name: downloadName(
             chart,
             DIFFICULTY_NAMES[chart.difficulty ?? DEFAULT_DIFFICULTY],
-            state.format
+            state.format,
+            state.tracks
           ),
           bytes: new Uint8Array(await blob.arrayBuffer()),
         })

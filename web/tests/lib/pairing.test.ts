@@ -203,6 +203,19 @@ test("downloadName combines the title, difficulty, and format", () => {
   expect(downloadName(chart, "Hard", "ogg")).toBe("Ruthless [Hard].ogg")
 })
 
+test("downloadName suffixes a stem render with the track selection, before the extension", () => {
+  const chart = makeChart({ info: makeOjnInfo({ title: "Fly Magpie" }) })
+  expect(downloadName(chart, "Hard", "mp3", "keysounds")).toBe(
+    "Fly Magpie [Hard]_keysounds.mp3"
+  )
+  expect(downloadName(chart, "Hard", "mp3", "background")).toBe(
+    "Fly Magpie [Hard]_background.mp3"
+  )
+  // The full mix keeps its plain name, so a stem never overwrites it.
+  expect(downloadName(chart, "Hard", "mp3", "all")).toBe("Fly Magpie [Hard].mp3")
+  expect(downloadName(chart, "Hard", "mp3")).toBe("Fly Magpie [Hard].mp3")
+})
+
 test("downloadName replaces characters a filesystem would reject", () => {
   const chart = makeChart({ info: makeOjnInfo({ title: 'a/b\\c:d*e?f"g<h>i|j' }) })
   expect(downloadName(chart, "Hard", "wav")).toBe("a_b_c_d_e_f_g_h_i_j [Hard].wav")

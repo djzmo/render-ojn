@@ -5,7 +5,8 @@
  * every dropped package is matched against that name, case-insensitively.
  * Packages that match nothing are held — a later drop may claim them.
  */
-import type { Difficulty, OjnInfo, OutputFormat } from "./renderojn"
+import { TRACK_SUFFIX } from "./renderojn"
+import type { Difficulty, OjnInfo, OutputFormat, Tracks } from "./renderojn"
 
 /**
  * Sample packages are always named `.ojm`.
@@ -59,7 +60,14 @@ export interface SamplePackage {
 export type RenderState =
   | { status: "idle" }
   | { status: "rendering"; progress: number }
-  | { status: "done"; url: string; size: number; format: OutputFormat }
+  | {
+      status: "done"
+      url: string
+      size: number
+      format: OutputFormat
+      /** The selection this file was rendered with; named into the download. */
+      tracks: Tracks
+    }
   | { status: "failed"; message: string }
 
 export interface ChartEntry {
@@ -157,14 +165,19 @@ export function formatBytes(bytes: number): string {
   return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`
 }
 
-/** `Ruthless [Hard].ogg` — readable, and stable across re-renders. */
+/**
+ * `Ruthless [Hard].ogg`, or `Ruthless [Hard]_background.ogg` for a stem —
+ * readable, stable across re-renders, and the track suffix sits against the
+ * extension exactly as the CLI's does.
+ */
 export function downloadName(
   entry: ChartEntry,
   difficultyName: string,
-  format: OutputFormat
+  format: OutputFormat,
+  tracks: Tracks = "all"
 ): string {
   const stem =
     entry.info?.title.replace(/[\\/:*?"<>|]/g, "_").trim() ||
     entry.fileName.replace(/\.ojn$/i, "")
-  return `${stem} [${difficultyName}].${format}`
+  return `${stem} [${difficultyName}]${TRACK_SUFFIX[tracks]}.${format}`
 }
