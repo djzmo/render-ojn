@@ -2,6 +2,7 @@
 
 #include "core/Diagnostic.hpp"
 #include "core/io/File.hpp"
+#include "core/io/Path.hpp"
 
 #include <algorithm>
 #include <array>
@@ -110,10 +111,12 @@ void apply_tags(TagLib::Tag& tag, const Tags& tags, bool ogg) {
 }
 
 void tag_file(const std::filesystem::path& path, const Tags& tags, bool ogg) {
-    TagLib::FileRef file(path.string().c_str());
-    if (file.isNull() || file.tag() == nullptr) throw Error(ExitCode::Runtime, "Unable to tag output: " + path.string());
+    // path::c_str() is wchar_t* on Windows and char* elsewhere; TagLib::FileName
+    // accepts both, so this opens Unicode paths correctly on every platform.
+    TagLib::FileRef file(path.c_str());
+    if (file.isNull() || file.tag() == nullptr) throw Error(ExitCode::Runtime, "Unable to tag output: " + io::path_to_utf8(path));
     apply_tags(*file.tag(), tags, ogg);
-    if (!file.save()) throw Error(ExitCode::Runtime, "Unable to save output tags: " + path.string());
+    if (!file.save()) throw Error(ExitCode::Runtime, "Unable to save output tags: " + io::path_to_utf8(path));
 }
 
 // Tags an already-encoded buffer in place.  TagLib's ByteVectorStream is a full
@@ -225,7 +228,14 @@ void write_ogg(io::TransactionalFile& output, std::uint64_t frames, int quality,
     info.samplerate = kSampleRate;
     info.channels = 2;
     info.format = SF_FORMAT_OGG | SF_FORMAT_VORBIS;
-    SndFileHandle file(sf_open(output.temporary_path().string().c_str(), SFM_WRITE, &info));
+    // On Windows libsndfile's sf_open decodes a char* path through the active
+    // code page (sndfile.c, CP_ACP), which corrupts any name outside the user's
+    // locale; sf_wchar_open takes the wide path directly.
+#ifdef _WIN32
+    SndFileHandle file(sf_wchar_open(output.temporary_path().c_str(), SFM_WRITE, &info));
+#else
+    SndFileHandle file(sf_open(output.temporary_path().c_str(), SFM_WRITE, &info));
+#endif
     if (file.get() == nullptr) throw Error(ExitCode::Runtime, "Unable to create Ogg output: " + std::string(sf_strerror(nullptr)));
     stream_ogg(file, frames, quality, produce);
     tag_file(output.temporary_path(), tags, true);

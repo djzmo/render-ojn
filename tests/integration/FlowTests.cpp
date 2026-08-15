@@ -1,5 +1,6 @@
 #include "core/Diagnostic.hpp"
 #include "core/audio/Decoder.hpp"
+#include "core/io/Path.hpp"
 #include "core/output/Encoder.hpp"
 #include "core/render/Mixer.hpp"
 
@@ -301,6 +302,17 @@ sf_count_t memory_reader_write(const void*, sf_count_t, void*) { return 0; }
 sf_count_t memory_reader_tell(void* user) { return static_cast<MemoryReader*>(user)->position; }
 #endif
 
+#ifdef RENDEROJN_EXTERNAL_DEPS
+// sf_open decodes a char* through the ANSI code page on Windows; take the wide path there.
+SNDFILE* open_sndfile(const std::filesystem::path& path, int mode, SF_INFO* info) {
+#ifdef _WIN32
+    return sf_wchar_open(path.c_str(), mode, info);
+#else
+    return sf_open(path.c_str(), mode, info);
+#endif
+}
+#endif
+
 renderojn::output::Tags sample_tags() {
     renderojn::output::Tags tags{};
     tags.title = "Synthetic Title";
@@ -332,7 +344,7 @@ TEST_CASE("encoded MP3 and Ogg output carries exact tags and decodes to stereo 4
                                                   tone_producer(kFrames));
         REQUIRE(std::filesystem::exists(destination));
 
-        TagLib::FileRef tagged(destination.string().c_str());
+        TagLib::FileRef tagged(destination.c_str());
         REQUIRE_FALSE(tagged.isNull());
         REQUIRE(tagged.tag() != nullptr);
         CHECK(tagged.tag()->title() == TagLib::String("Synthetic Title"));
@@ -348,7 +360,7 @@ TEST_CASE("encoded MP3 and Ogg output carries exact tags and decodes to stereo 4
             CHECK(xiph->fieldListMap().find("ENCODER") == xiph->fieldListMap().end());
 
             SF_INFO info{};
-            SNDFILE* decoded = sf_open(destination.string().c_str(), SFM_READ, &info);
+            SNDFILE* decoded = open_sndfile(destination, SFM_READ, &info);
             REQUIRE(decoded != nullptr);
             CHECK(info.channels == 2);
             CHECK(info.samplerate == 48000);
@@ -377,6 +389,44 @@ TEST_CASE("encoded MP3 and Ogg output carries exact tags and decodes to stereo 4
 // (ogg_vorbis.c calls ogg_stream_init with psf_rand_int32, which reads
 // gettimeofday), so no two Ogg encodes are ever identical -- not even two file
 // encodes.  It is checked structurally instead, one case below.
+TEST_CASE("every encoder publishes to a destination whose name is outside the ANSI code page") {
+    constexpr std::size_t kFrames = 4800;
+    struct Case {
+        renderojn::output::Format format;
+        const char* extension;
+    };
+    std::vector<Case> cases{{renderojn::output::Format::Wav, ".wav"}};
+#ifdef RENDEROJN_EXTERNAL_DEPS
+    cases.push_back({renderojn::output::Format::Mp3, ".mp3"});
+    cases.push_back({renderojn::output::Format::Ogg, ".ogg"});
+#endif
+    for (const auto& item : cases) {
+        // "renderojn-한글" + extension, as UTF-8 escapes.
+        const auto destination = std::filesystem::temp_directory_path() /
+                                 renderojn::io::utf8_to_path(std::string("renderojn-\xED\x95\x9C\xEA\xB8\x80") + item.extension);
+        std::error_code ignored;
+        std::filesystem::remove(destination, ignored);
+
+        renderojn::output::encode_transactionally(item.format, destination, kFrames, 3, sample_tags(),
+                                                  tone_producer(kFrames));
+        REQUIRE(std::filesystem::exists(destination));
+        CHECK(std::filesystem::file_size(destination) > 0);
+#ifdef RENDEROJN_EXTERNAL_DEPS
+        if (item.format != renderojn::output::Format::Wav) {
+            TagLib::FileRef tagged(destination.c_str());
+            REQUIRE_FALSE(tagged.isNull());
+            CHECK(tagged.tag()->title() == TagLib::String("Synthetic Title"));
+        }
+#endif
+        std::filesystem::remove(destination, ignored);
+        // No temporary may be left behind beside it.
+        for (const auto& entry : std::filesystem::directory_iterator(std::filesystem::temp_directory_path())) {
+            const auto name = renderojn::io::path_to_utf8(entry.path().filename());
+            CHECK(name.find("renderojn-\xED\x95\x9C\xEA\xB8\x80") == std::string::npos);
+        }
+    }
+}
+
 TEST_CASE("encoding to a buffer is byte-identical to encoding to a file") {
     constexpr std::size_t kFrames = 24000;
     struct Case {
@@ -447,7 +497,7 @@ TEST_CASE("Ogg encoded to a buffer matches the file encoder everywhere it can") 
     sf_close(buffer_handle);
 
     SF_INFO file_info{};
-    SNDFILE* file_handle = sf_open(destination.string().c_str(), SFM_READ, &file_info);
+    SNDFILE* file_handle = open_sndfile(destination, SFM_READ, &file_info);
     REQUIRE(file_handle != nullptr);
     std::vector<float> file_samples(static_cast<std::size_t>(file_info.frames) * 2U);
     const auto file_read = sf_readf_float(file_handle, file_samples.data(), file_info.frames);

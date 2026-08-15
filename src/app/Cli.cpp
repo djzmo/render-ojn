@@ -1,5 +1,6 @@
 #include "app/Cli.hpp"
 #include "app/Version.hpp"
+#include "core/io/Path.hpp"
 
 #include <algorithm>
 #include <sstream>
@@ -75,7 +76,7 @@ Options parse_cli(const std::vector<std::string>& arguments) {
             continue;
         }
         if (!positional_only && token == "--outfile") {
-            result.output = std::filesystem::path(take_value(arguments, index, token));
+            result.output = io::utf8_to_path(take_value(arguments, index, token));
             result.output_set = true;
             continue;
         }
@@ -87,12 +88,15 @@ Options parse_cli(const std::vector<std::string>& arguments) {
             continue;
         }
         if (!positional_only && token == "--sample-package") {
-            result.sample_package = std::filesystem::path(take_value(arguments, index, token));
+            result.sample_package = io::utf8_to_path(take_value(arguments, index, token));
             continue;
         }
         if (!positional_only && token.rfind("--", 0) == 0) usage_error("Unknown option: " + token);
-        if (!result.input.empty()) usage_error("Only one input .ojn file may be supplied");
-        result.input = token;
+        if (!result.input.empty()) {
+            usage_error("Only one input may be supplied (got '" + io::path_to_utf8(result.input) + "' and '" + token +
+                        "'). Quote a path that contains spaces: RenderOJN \"C:\\My Songs\\o2ma100.ojn\"");
+        }
+        result.input = io::utf8_to_path(token);
     }
     if (result.input.empty()) usage_error("Missing input .ojn file");
     return result;
@@ -100,10 +104,17 @@ Options parse_cli(const std::vector<std::string>& arguments) {
 
 std::filesystem::path resolve_output_path(const Options& options) {
     const std::string extension = options.output_format == OutputFormat::Wav ? ".wav" : options.output_format == OutputFormat::Mp3 ? ".mp3" : ".ogg";
-    if (!options.output) return std::filesystem::absolute(options.input).string() + extension;
+    if (!options.output) {
+        auto output = std::filesystem::absolute(options.input);
+        output += extension;
+        return output;
+    }
     auto output = *options.output;
-    if (!output.has_extension()) return output.string() + extension;
-    if (output.extension().string() != extension) {
+    if (!output.has_extension()) {
+        output += extension;
+        return output;
+    }
+    if (output.extension() != std::filesystem::path(extension)) {
         usage_error("--outfile extension conflicts with --format (expected " + extension + ")");
     }
     return output;

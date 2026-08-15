@@ -281,7 +281,7 @@ void write_summary(const std::filesystem::path& directory, const Totals& totals)
 
 void validate_chart(const std::string& id, const std::filesystem::path& file, Report& report, Totals& totals) {
     try {
-        const auto buffer = renderojn::io::read_file(file.string(), kTwoGiB, "OJN");
+        const auto buffer = renderojn::io::read_file(file, kTwoGiB, "OJN");
         // All three difficulties are parsed from the same immutable buffer.
         std::size_t total_notes = 0;
         for (const auto difficulty : {renderojn::format::Difficulty::Easy, renderojn::format::Difficulty::Normal,
@@ -334,7 +334,7 @@ void validate_package(const std::string& id, const std::filesystem::path& file, 
                       Totals& totals) {
     std::string detail;
     try {
-        const auto buffer = renderojn::io::read_file(file.string(), kTwoGiB, "sample package");
+        const auto buffer = renderojn::io::read_file(file, kTwoGiB, "sample package");
         detail = describe_package_detail(buffer->bytes());
         const auto package = renderojn::format::parse_sample_package(buffer);
         ++totals.packages_parsed;

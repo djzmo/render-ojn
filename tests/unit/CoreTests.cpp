@@ -8,6 +8,7 @@
 #include "core/format/OjnParser.hpp"
 #include "core/format/PackageParser.hpp"
 #include "core/io/ByteReader.hpp"
+#include "core/io/Path.hpp"
 #include "core/render/Mixer.hpp"
 #include "../fixtures/SyntheticFixture.hpp"
 
@@ -223,6 +224,31 @@ TEST_CASE("CLI output extensions are exact and never duplicated") {
     const auto unextended = renderojn::app::parse_cli({"song.ojn", "--format", "ogg", "--outfile", "mix"});
     CHECK(renderojn::app::resolve_output_path(unextended).filename() == "mix.ogg");
     CHECK_THROWS_AS(renderojn::app::resolve_output_path(renderojn::app::parse_cli({"song.ojn", "--format", "wav", "--outfile", "mix.mp3"})), renderojn::Error);
+}
+
+TEST_CASE("UTF-8 path helpers round-trip text outside the ANSI code page") {
+    // "한글.ojn" as UTF-8 bytes; kept as escapes so the source stays ASCII.
+    const std::string utf8 = "\xED\x95\x9C\xEA\xB8\x80.ojn";
+    const auto path = renderojn::io::utf8_to_path(utf8);
+    CHECK(renderojn::io::path_to_utf8(path) == utf8);
+#ifdef _WIN32
+    CHECK(path.native() == L"\xD55C\xAE00.ojn");
+#endif
+    CHECK(renderojn::io::path_to_utf8(renderojn::io::utf8_to_path("plain.ojn")) == "plain.ojn");
+}
+
+TEST_CASE("CLI accepts non-ASCII input and output paths verbatim") {
+    const std::string input = "\xEC\x9C\xA0\xEB\xA0\xB9.ojn";      // 유령.ojn
+    const std::string output = "\xEC\xB6\x95\xEC\xA0\x9C.mp3";     // 축제.mp3
+    const auto options = renderojn::app::parse_cli({input, "--outfile", output});
+    CHECK(renderojn::io::path_to_utf8(options.input) == input);
+    REQUIRE(options.output.has_value());
+    CHECK(renderojn::io::path_to_utf8(renderojn::app::resolve_output_path(options)) == output);
+}
+
+TEST_CASE("CLI explains how to quote a path when a second positional appears") {
+    REQUIRE_THROWS_WITH(renderojn::app::parse_cli({"a.ojn", "b.ojn"}),
+                        Catch::Matchers::ContainsSubstring("Quote a path that contains spaces"));
 }
 
 TEST_CASE("checked arithmetic and bounded reads reject overflow and truncation") {

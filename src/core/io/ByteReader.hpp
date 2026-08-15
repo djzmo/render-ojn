@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
@@ -43,7 +44,7 @@ private:
     std::size_t end_{};
 };
 
-[[nodiscard]] std::shared_ptr<const ByteBuffer> read_file(const std::string& path, std::uint64_t maximum_bytes, const char* kind);
+[[nodiscard]] std::shared_ptr<const ByteBuffer> read_file(const std::filesystem::path& path, std::uint64_t maximum_bytes, const char* kind);
 [[nodiscard]] bool checked_add(std::size_t left, std::size_t right, std::size_t& result) noexcept;
 [[nodiscard]] bool checked_multiply(std::size_t left, std::size_t right, std::size_t& result) noexcept;
 

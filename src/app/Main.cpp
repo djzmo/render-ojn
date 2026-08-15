@@ -7,6 +7,7 @@
 #include "core/format/OjnParser.hpp"
 #include "core/format/PackageParser.hpp"
 #include "core/io/ByteReader.hpp"
+#include "core/io/Path.hpp"
 #include "core/output/Encoder.hpp"
 #include "core/render/Mixer.hpp"
 
@@ -14,6 +15,12 @@
 #include <iostream>
 #include <string>
 #include <vector>
+
+#ifdef _WIN32
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
 
 namespace {
 
@@ -24,16 +31,16 @@ std::filesystem::path resolve_sample_package(const renderojn::app::Options& opti
     namespace fs = std::filesystem;
     if (options.sample_package) {
         if (!fs::is_regular_file(*options.sample_package)) {
-            throw renderojn::Error(renderojn::ExitCode::Runtime, "Sample-package override does not exist: " + options.sample_package->string());
+            throw renderojn::Error(renderojn::ExitCode::Runtime, "Sample-package override does not exist: " + renderojn::io::path_to_utf8(*options.sample_package));
         }
         return *options.sample_package;
     }
     if (header.package_name.empty()) {
         throw renderojn::Error(renderojn::ExitCode::Runtime, "OJN does not name a sample package; pass --sample-package <path>");
     }
-    const auto beside_input = options.input.parent_path() / fs::path(header.package_name);
+    const auto beside_input = options.input.parent_path() / renderojn::io::utf8_to_path(header.package_name);
     if (fs::is_regular_file(beside_input)) return beside_input;
-    const auto current_directory = fs::current_path() / fs::path(header.package_name);
+    const auto current_directory = fs::current_path() / renderojn::io::utf8_to_path(header.package_name);
     if (fs::is_regular_file(current_directory)) {
         diagnostics.warn("sample package was resolved from the current directory; place it beside the OJN or use --sample-package");
         return current_directory;
@@ -58,14 +65,14 @@ void print_warnings(const renderojn::Diagnostics& diagnostics) {
 
 } // namespace
 
-int main(int argc, char** argv) {
+// The whole program, on UTF-8 arguments.  The platform entry points below only
+// exist to hand it correctly decoded text.
+int run(const std::vector<std::string>& arguments) {
     // Warnings accumulated before a failure explain that failure (for example a
     // sample package silently resolved from the current directory), so the
     // diagnostics must outlive the try block and be flushed on every exit path.
     renderojn::Diagnostics diagnostics;
     try {
-        std::vector<std::string> arguments;
-        for (int index = 1; index < argc; ++index) arguments.emplace_back(argv[index]);
         auto options = renderojn::app::parse_cli(arguments);
         if (options.help) {
             std::cout << renderojn::app::banner() << '\n' << renderojn::app::usage();
@@ -77,13 +84,13 @@ int main(int argc, char** argv) {
             const auto destination = options.play ? std::filesystem::path{} : renderojn::app::resolve_output_path(options);
         std::cout << renderojn::app::banner();
 
-        const auto ojn = renderojn::io::read_file(options.input.string(), kTwoGiB, "OJN");
+        const auto ojn = renderojn::io::read_file(options.input, kTwoGiB, "OJN");
         // parse_ojn_chart parses and validates the header itself, so reuse the copy
         // it returns instead of running the whole header validation twice.
         const auto chart = renderojn::format::parse_ojn_chart(ojn, options.difficulty);
         const auto& header = chart.header;
         const auto package_path = resolve_sample_package(options, header, diagnostics);
-        const auto package_data = renderojn::io::read_file(package_path.string(), kTwoGiB, "sample package");
+        const auto package_data = renderojn::io::read_file(package_path, kTwoGiB, "sample package");
         auto compatible_chart = chart;
         renderojn::compat::apply_known_ojn_ojm_profiles(compatible_chart, *ojn, *package_data, diagnostics);
         const auto package = renderojn::format::parse_sample_package(package_data);
@@ -123,3 +130,34 @@ int main(int argc, char** argv) {
         return static_cast<int>(renderojn::ExitCode::Runtime);
     }
 }
+
+#ifdef _WIN32
+namespace {
+
+std::string wide_to_utf8(const wchar_t* text) {
+    const auto length = ::WideCharToMultiByte(CP_UTF8, 0, text, -1, nullptr, 0, nullptr, nullptr);
+    if (length <= 1) return {};
+    std::string result(static_cast<std::size_t>(length - 1), '\0');
+    ::WideCharToMultiByte(CP_UTF8, 0, text, -1, result.data(), length, nullptr, nullptr);
+    return result;
+}
+
+} // namespace
+
+// The narrow main() would receive argv through the active code page, which
+// cannot represent a Korean or Japanese path on a Western locale (and vice
+// versa).  Take the wide command line instead and speak UTF-8 from here on;
+// the console is switched to UTF-8 so titles and paths print back intact.
+int wmain(int argc, wchar_t** argv) {
+    ::SetConsoleOutputCP(CP_UTF8);
+    std::vector<std::string> arguments;
+    for (int index = 1; index < argc; ++index) arguments.push_back(wide_to_utf8(argv[index]));
+    return run(arguments);
+}
+#else
+int main(int argc, char** argv) {
+    std::vector<std::string> arguments;
+    for (int index = 1; index < argc; ++index) arguments.emplace_back(argv[index]);
+    return run(arguments);
+}
+#endif
