@@ -270,6 +270,18 @@ TEST_CASE("ordinary OJN header and tuple are parsed from one immutable buffer") 
     CHECK(chart.notes.front().frame == 0);
 }
 
+TEST_CASE("OJN header text is decoded from CP949 to UTF-8") {
+    renderojn::test_fixture::OrdinaryOjnSpec spec;
+    spec.title = "\xC7\xD1\xB1\xDB";                 // 한글 in CP949
+    spec.artist = "\xC0\xAF\xB7\xC9\xC0\xC7\x20\xC3\xE0\xC1\xA6" "2(Sneak)";   // 유령의 축제2(Sneak) in CP949
+    spec.charter = "Plain ASCII";
+    const auto chart = renderojn::format::parse_ojn_chart(renderojn::test_fixture::ordinary_ojn(spec), renderojn::format::Difficulty::Hard);
+    CHECK(chart.header.title == "\xED\x95\x9C\xEA\xB8\x80");
+    CHECK(chart.header.artist == "\xEC\x9C\xA0\xEB\xA0\xB9\xEC\x9D\x98\x20\xEC\xB6\x95\xEC\xA0\x9C" "2(Sneak)");
+    CHECK(chart.header.charter == "Plain ASCII");
+    CHECK(chart.header.package_name == "synthetic.ojm");
+}
+
 TEST_CASE("OJN preserves exact five-way source positions before frame conversion") {
     renderojn::test_fixture::OrdinaryOjnSpec spec;
     spec.durations = {{3, 3, 3}};

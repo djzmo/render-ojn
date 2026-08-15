@@ -75,7 +75,7 @@ std::vector<std::uint8_t> ByteReader::take(std::size_t size, const char* field) 
     return {begin, begin + static_cast<std::ptrdiff_t>(size)};
 }
 
-std::string ByteReader::latin1_fixed(std::size_t size, const char* field) {
+std::string ByteReader::raw_fixed(std::size_t size, const char* field) {
     auto value = take(size, field);
     const auto terminator = std::find(value.begin(), value.end(), std::uint8_t{0});
     std::string result;

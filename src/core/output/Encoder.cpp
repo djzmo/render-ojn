@@ -100,11 +100,11 @@ void write_wav(ByteSink& sink, std::uint64_t frames, const PcmProducer& produce)
 // The single definition of what a RenderOJN tag set looks like.  Both the file
 // and buffer paths call this, so neither can drift from the other.
 void apply_tags(TagLib::Tag& tag, const Tags& tags, bool ogg) {
-    tag.setTitle(TagLib::String(tags.title.c_str(), TagLib::String::Latin1));
-    tag.setArtist(TagLib::String(tags.artist.c_str(), TagLib::String::Latin1));
+    tag.setTitle(TagLib::String(tags.title, TagLib::String::UTF8));
+    tag.setArtist(TagLib::String(tags.artist, TagLib::String::UTF8));
     tag.setTrack(tags.track);
-    tag.setGenre(TagLib::String(tags.genre.c_str(), TagLib::String::Latin1));
-    tag.setComment(TagLib::String(tags.comment.c_str(), TagLib::String::UTF8));
+    tag.setGenre(TagLib::String(tags.genre, TagLib::String::UTF8));
+    tag.setComment(TagLib::String(tags.comment, TagLib::String::UTF8));
     if (ogg) {
         if (auto* xiph = dynamic_cast<TagLib::Ogg::XiphComment*>(&tag)) xiph->removeFields("ENCODER");
     }

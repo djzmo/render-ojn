@@ -34,7 +34,7 @@ public:
     [[nodiscard]] std::uint32_t u32le(const char* field);
     [[nodiscard]] float f32le(const char* field);
     [[nodiscard]] std::vector<std::uint8_t> take(std::size_t size, const char* field);
-    [[nodiscard]] std::string latin1_fixed(std::size_t size, const char* field);
+    [[nodiscard]] std::string raw_fixed(std::size_t size, const char* field);
     void seek(std::size_t position, const char* field);
 
 private:

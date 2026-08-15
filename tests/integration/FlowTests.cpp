@@ -26,6 +26,9 @@
 #include <tag.h>
 #include <tbytevectorstream.h>
 #include <xiphcomment.h>
+#include <mpegfile.h>
+#include <id3v2tag.h>
+#include <textidentificationframe.h>
 #endif
 
 namespace {
@@ -426,6 +429,58 @@ TEST_CASE("every encoder publishes to a destination whose name is outside the AN
         }
     }
 }
+
+#ifdef RENDEROJN_EXTERNAL_DEPS
+TEST_CASE("non-Latin tags survive MP3 and Ogg on both the file and buffer paths") {
+    constexpr std::size_t kFrames = 4800;
+    // 유령의 축제 / 한글 as UTF-8, the form the parser now hands the encoder.
+    const std::string title = "\xEC\x9C\xA0\xEB\xA0\xB9\xEC\x9D\x98\x20\xEC\xB6\x95\xEC\xA0\x9C" "2(Sneak)";
+    const std::string artist = "\xED\x95\x9C\xEA\xB8\x80";
+    auto tags = sample_tags();
+    tags.title = title;
+    tags.artist = artist;
+
+    struct Case {
+        renderojn::output::Format format;
+        const char* filename;
+        bool ogg;
+    };
+    const std::vector<Case> cases{{renderojn::output::Format::Mp3, "renderojn-utf8.mp3", false},
+                                  {renderojn::output::Format::Ogg, "renderojn-utf8.ogg", true}};
+    for (const auto& item : cases) {
+        INFO("format: " << item.filename);
+        const auto destination = std::filesystem::temp_directory_path() / item.filename;
+        std::error_code ignored;
+        std::filesystem::remove(destination, ignored);
+        renderojn::output::encode_transactionally(item.format, destination, kFrames, 1, tags, tone_producer(kFrames));
+
+        TagLib::FileRef from_file(destination.c_str());
+        REQUIRE_FALSE(from_file.isNull());
+        CHECK(from_file.tag()->title().to8Bit(true) == title);
+        CHECK(from_file.tag()->artist().to8Bit(true) == artist);
+        if (!item.ogg) {
+            // ID3v2.4 must carry the text as UTF-8, not a Latin-1 approximation.
+            auto* mpeg = dynamic_cast<TagLib::MPEG::File*>(from_file.file());
+            REQUIRE(mpeg != nullptr);
+            REQUIRE(mpeg->hasID3v2Tag());
+            const auto& frames = mpeg->ID3v2Tag()->frameListMap()["TIT2"];
+            REQUIRE_FALSE(frames.isEmpty());
+            auto* text = dynamic_cast<TagLib::ID3v2::TextIdentificationFrame*>(frames.front());
+            REQUIRE(text != nullptr);
+            CHECK(text->textEncoding() == TagLib::String::UTF8);
+        }
+        std::filesystem::remove(destination, ignored);
+
+        auto bytes = renderojn::output::encode_to_buffer(item.format, kFrames, 1, tags, tone_producer(kFrames));
+        TagLib::ByteVectorStream stream(TagLib::ByteVector(reinterpret_cast<const char*>(bytes.data()),
+                                                          static_cast<unsigned int>(bytes.size())));
+        TagLib::FileRef from_buffer(&stream);
+        REQUIRE_FALSE(from_buffer.isNull());
+        CHECK(from_buffer.tag()->title().to8Bit(true) == title);
+        CHECK(from_buffer.tag()->artist().to8Bit(true) == artist);
+    }
+}
+#endif
 
 TEST_CASE("encoding to a buffer is byte-identical to encoding to a file") {
     constexpr std::size_t kFrames = 24000;

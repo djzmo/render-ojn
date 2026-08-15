@@ -1,6 +1,7 @@
 #include "core/format/OjnParser.hpp"
 
 #include "core/Diagnostic.hpp"
+#include "core/text/Cp949.hpp"
 
 #include <algorithm>
 #include <array>
@@ -98,13 +99,14 @@ OjnHeader parse_header(io::ByteReader& input) {
     }
     static_cast<void>(input.u16le("old encryption version"));
     static_cast<void>(input.u16le("old song id"));
-    static_cast<void>(input.latin1_fixed(20, "old genre"));
+    static_cast<void>(input.raw_fixed(20, "old genre"));
     static_cast<void>(input.u32le("old cover size"));
     static_cast<void>(input.f32le("chart version"));
-    header.title = input.latin1_fixed(64, "title");
-    header.artist = input.latin1_fixed(32, "artist");
-    header.charter = input.latin1_fixed(32, "charter");
-    header.package_name = input.latin1_fixed(32, "sample package name");
+    // The game wrote these fields in CP949; everything downstream wants UTF-8.
+    header.title = text::decode_ojn_text(input.raw_fixed(64, "title"));
+    header.artist = text::decode_ojn_text(input.raw_fixed(32, "artist"));
+    header.charter = text::decode_ojn_text(input.raw_fixed(32, "charter"));
+    header.package_name = text::decode_ojn_text(input.raw_fixed(32, "sample package name"));
     static_cast<void>(input.u32le("new cover size"));
     for (auto& duration : header.duration_seconds) {
         duration = input.u32le("duration");
