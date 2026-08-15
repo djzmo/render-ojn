@@ -100,14 +100,14 @@ OjnHeader parse_header(io::ByteReader& input) {
     static_cast<void>(input.u16le("old encryption version"));
     static_cast<void>(input.u16le("old song id"));
     static_cast<void>(input.raw_fixed(20, "old genre"));
-    static_cast<void>(input.u32le("old cover size"));
+    header.old_cover_size = input.u32le("old cover size");
     static_cast<void>(input.f32le("chart version"));
     // The game wrote these fields in CP949; everything downstream wants UTF-8.
     header.title = text::decode_ojn_text(input.raw_fixed(64, "title"));
     header.artist = text::decode_ojn_text(input.raw_fixed(32, "artist"));
     header.charter = text::decode_ojn_text(input.raw_fixed(32, "charter"));
     header.package_name = text::decode_ojn_text(input.raw_fixed(32, "sample package name"));
-    static_cast<void>(input.u32le("new cover size"));
+    header.new_cover_size = input.u32le("new cover size");
     for (auto& duration : header.duration_seconds) {
         duration = input.u32le("duration");
         if (duration > kMaxDurationSeconds) malformed("duration exceeds six-hour limit");
@@ -341,6 +341,42 @@ std::string genre_name(std::uint32_t genre, Diagnostics& diagnostics) {
         return kGenres.back();
     }
     return kGenres[genre];
+}
+
+namespace {
+
+// Nothing a chart legitimately embeds comes near this; anything larger is a
+// corrupt size field, not a picture.
+constexpr std::size_t kMaxCoverBytes = 16U * 1024U * 1024U;
+
+std::optional<CoverArt> cover_slice(const io::ByteBuffer& buffer, std::size_t offset, std::size_t size, const char* signature,
+                                    std::size_t signature_size, const char* mime, const char* label, Diagnostics& diagnostics) {
+    if (size == 0) return std::nullopt;
+    std::size_t end{};
+    if (size > kMaxCoverBytes || !io::checked_add(offset, size, end) || end > buffer.size()) {
+        diagnostics.warn(std::string("cover art: ") + label + " cover does not fit the file; ignored");
+        return std::nullopt;
+    }
+    const auto* bytes = buffer.data() + offset;
+    if (size < signature_size || std::memcmp(bytes, signature, signature_size) != 0) {
+        diagnostics.warn(std::string("cover art: ") + label + " cover has no valid signature; ignored");
+        return std::nullopt;
+    }
+    return CoverArt{std::vector<std::uint8_t>(bytes, bytes + size), mime};
+}
+
+} // namespace
+
+std::optional<CoverArt> extract_cover_art(const io::ByteBuffer& normalized, const OjnHeader& header, Diagnostics& diagnostics) {
+    const auto base = static_cast<std::size_t>(header.chart_offsets[3]);
+    if (auto jpeg = cover_slice(normalized, base, header.new_cover_size, "\xFF\xD8\xFF", 3, "image/jpeg", "JPEG", diagnostics)) {
+        return jpeg;
+    }
+    // The BMP follows the JPEG's declared extent even when the JPEG itself was
+    // rejected: that is where the format says it starts.
+    std::size_t bmp_offset{};
+    if (!io::checked_add(base, header.new_cover_size, bmp_offset)) return std::nullopt;
+    return cover_slice(normalized, bmp_offset, header.old_cover_size, "BM", 2, "image/bmp", "BMP", diagnostics);
 }
 
 } // namespace renderojn::format

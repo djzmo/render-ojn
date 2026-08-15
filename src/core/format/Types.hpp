@@ -29,6 +29,10 @@ struct OjnHeader {
     std::string package_name;
     std::array<std::uint32_t, 3> duration_seconds{};
     std::array<std::uint32_t, 4> chart_offsets{};
+    // Cover art trails the last chart section at chart_offsets[3]: a JPEG of
+    // new_cover_size bytes, then a BMP of old_cover_size bytes.  Either may be 0.
+    std::uint32_t old_cover_size{};
+    std::uint32_t new_cover_size{};
 };
 
 struct NoteEvent {

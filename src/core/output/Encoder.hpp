@@ -17,6 +17,10 @@ struct Tags {
     std::uint32_t track{};
     std::string genre;
     std::string comment;
+    // Front-cover picture, embedded verbatim when non-empty (ID3v2 APIC for
+    // MP3, METADATA_BLOCK_PICTURE for Ogg).  cover_mime names its format.
+    std::vector<std::uint8_t> cover;
+    std::string cover_mime;
 };
 
 using PcmProducer = std::function<void(const std::function<void(const float*, std::size_t)>&)>;

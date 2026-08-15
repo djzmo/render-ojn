@@ -359,6 +359,64 @@ TEST_CASE("OJN header text is decoded from CP949 to UTF-8") {
     CHECK(chart.header.package_name == "synthetic.ojm");
 }
 
+TEST_CASE("OJN cover art prefers the JPEG, falls back to the BMP, and never fails the parse") {
+    using renderojn::test_fixture::OrdinaryOjnSpec;
+    const auto extract = [](const OrdinaryOjnSpec& spec, renderojn::Diagnostics& diagnostics) {
+        const auto buffer = renderojn::test_fixture::ordinary_ojn(spec);
+        const auto header = renderojn::format::parse_ojn_header(buffer);
+        return renderojn::format::extract_cover_art(*buffer, header, diagnostics);
+    };
+
+    SECTION("no cover declared") {
+        renderojn::Diagnostics diagnostics;
+        CHECK_FALSE(extract(OrdinaryOjnSpec{}, diagnostics).has_value());
+        CHECK(diagnostics.warnings().empty());
+    }
+    SECTION("JPEG wins over BMP") {
+        OrdinaryOjnSpec spec;
+        spec.jpeg_cover = renderojn::test_fixture::tiny_jpeg();
+        spec.bmp_cover = renderojn::test_fixture::tiny_bmp();
+        renderojn::Diagnostics diagnostics;
+        const auto cover = extract(spec, diagnostics);
+        REQUIRE(cover.has_value());
+        CHECK(cover->mime == "image/jpeg");
+        CHECK(cover->bytes == renderojn::test_fixture::tiny_jpeg());
+        CHECK(diagnostics.warnings().empty());
+    }
+    SECTION("BMP alone") {
+        OrdinaryOjnSpec spec;
+        spec.bmp_cover = renderojn::test_fixture::tiny_bmp();
+        renderojn::Diagnostics diagnostics;
+        const auto cover = extract(spec, diagnostics);
+        REQUIRE(cover.has_value());
+        CHECK(cover->mime == "image/bmp");
+        CHECK(cover->bytes == renderojn::test_fixture::tiny_bmp());
+    }
+    SECTION("a JPEG without its signature is skipped in favour of the BMP") {
+        OrdinaryOjnSpec spec;
+        spec.jpeg_cover = {'n', 'o', 't', ' ', 'j', 'p', 'e', 'g'};
+        spec.bmp_cover = renderojn::test_fixture::tiny_bmp();
+        renderojn::Diagnostics diagnostics;
+        const auto cover = extract(spec, diagnostics);
+        REQUIRE(cover.has_value());
+        CHECK(cover->mime == "image/bmp");
+        REQUIRE(diagnostics.warnings().size() == 1);
+        CHECK_THAT(diagnostics.warnings().front(), Catch::Matchers::ContainsSubstring("JPEG cover has no valid signature"));
+    }
+    SECTION("a cover that runs past the end of the file is skipped") {
+        OrdinaryOjnSpec spec;
+        spec.jpeg_cover = renderojn::test_fixture::tiny_jpeg();
+        auto bytes = renderojn::test_fixture::ordinary_ojn(spec)->bytes();
+        bytes.resize(bytes.size() - 4);  // truncate the picture, keep the header's claim
+        const auto truncated = std::make_shared<renderojn::io::ByteBuffer>(std::move(bytes));
+        const auto header = renderojn::format::parse_ojn_header(truncated);
+        renderojn::Diagnostics diagnostics;
+        CHECK_FALSE(renderojn::format::extract_cover_art(*truncated, header, diagnostics).has_value());
+        REQUIRE(diagnostics.warnings().size() == 1);
+        CHECK_THAT(diagnostics.warnings().front(), Catch::Matchers::ContainsSubstring("does not fit the file"));
+    }
+}
+
 TEST_CASE("OJN preserves exact five-way source positions before frame conversion") {
     renderojn::test_fixture::OrdinaryOjnSpec spec;
     spec.durations = {{3, 3, 3}};
