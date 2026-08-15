@@ -3,6 +3,7 @@
 #include "core/io/Path.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <sstream>
 
 namespace renderojn::app {
@@ -91,6 +92,18 @@ Options parse_cli(const std::vector<std::string>& arguments) {
             result.sample_package = io::utf8_to_path(take_value(arguments, index, token));
             continue;
         }
+        if (!positional_only && token == "--outdir") {
+            result.outdir = io::utf8_to_path(take_value(arguments, index, token));
+            continue;
+        }
+        if (!positional_only && token == "--title-as-filename") {
+            result.title_as_filename = true;
+            continue;
+        }
+        if (!positional_only && token == "--no-cover-art") {
+            result.cover_art = false;
+            continue;
+        }
         if (!positional_only && token.rfind("--", 0) == 0) usage_error("Unknown option: " + token);
         if (!result.input.empty()) {
             usage_error("Only one input may be supplied (got '" + io::path_to_utf8(result.input) + "' and '" + token +
@@ -102,22 +115,88 @@ Options parse_cli(const std::vector<std::string>& arguments) {
     return result;
 }
 
-std::filesystem::path resolve_output_path(const Options& options) {
+void validate_output_options(const Options& options, bool input_is_directory) {
+    if (options.output && options.outdir) {
+        usage_error("--outfile and --outdir cannot be combined; --outfile names the whole path, --outdir only the folder");
+    }
+    if (input_is_directory && options.output) usage_error("--outfile cannot be used with a folder input; use --outdir");
+    if (input_is_directory && options.play) usage_error("--play needs a single .ojn file, not a folder");
+}
+
+std::string sanitize_filename(std::string_view utf8) {
+    std::string result;
+    result.reserve(utf8.size());
+    for (const auto character : utf8) {
+        const auto byte = static_cast<unsigned char>(character);
+        const bool illegal = byte < 0x20 || character == '\\' || character == '/' || character == ':' || character == '*' ||
+                             character == '?' || character == '"' || character == '<' || character == '>' || character == '|';
+        result.push_back(illegal ? '_' : character);
+    }
+    // Windows drops trailing spaces and dots from names; leading spaces are
+    // merely confusing.
+    const auto first = result.find_first_not_of(' ');
+    if (first == std::string::npos) return {};
+    result.erase(0, first);
+    const auto last = result.find_last_not_of(" .");
+    if (last == std::string::npos) return {};
+    result.erase(last + 1);
+    return result;
+}
+
+const char* tracks_suffix(render::TrackSelection tracks) {
+    switch (tracks) {
+    case render::TrackSelection::Keysounds: return "_keysounds";
+    case render::TrackSelection::Background: return "_background";
+    default: return "";
+    }
+}
+
+std::filesystem::path input_stem(const std::filesystem::path& input) {
+    const auto name = input.filename();
+    auto extension = io::path_to_utf8(name.extension());
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    return extension == ".ojn" ? name.stem() : name;
+}
+
+std::filesystem::path resolve_output_path(const Options& options, const std::filesystem::path& input,
+                                          const std::string& title_utf8) {
     const std::string extension = options.output_format == OutputFormat::Wav ? ".wav" : options.output_format == OutputFormat::Mp3 ? ".mp3" : ".ogg";
-    if (!options.output) {
-        auto output = std::filesystem::absolute(options.input);
-        output += extension;
+    if (options.output) {
+        auto output = *options.output;
+        if (!output.has_extension()) {
+            output += extension;
+            return output;
+        }
+        if (output.extension() != std::filesystem::path(extension)) {
+            usage_error("--outfile extension conflicts with --format (expected " + extension + ")");
+        }
         return output;
     }
-    auto output = *options.output;
-    if (!output.has_extension()) {
-        output += extension;
-        return output;
+    std::filesystem::path stem;
+    if (options.title_as_filename) {
+        const auto title = sanitize_filename(title_utf8);
+        if (!title.empty()) stem = io::utf8_to_path(title);
     }
-    if (output.extension() != std::filesystem::path(extension)) {
-        usage_error("--outfile extension conflicts with --format (expected " + extension + ")");
+    if (stem.empty()) stem = input_stem(input);
+    stem += tracks_suffix(options.tracks);
+    stem += extension;
+    const auto directory = options.outdir ? *options.outdir : std::filesystem::absolute(input).parent_path();
+    return directory / stem;
+}
+
+std::vector<std::filesystem::path> collect_batch_inputs(const std::filesystem::path& directory) {
+    std::vector<std::filesystem::path> inputs;
+    for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        if (!entry.is_regular_file()) continue;
+        // input_stem strips only a ".ojn" extension, so a changed name means it had one.
+        if (input_stem(entry.path()) == entry.path().filename()) continue;
+        inputs.push_back(entry.path());
     }
-    return output;
+    std::sort(inputs.begin(), inputs.end(), [](const std::filesystem::path& left, const std::filesystem::path& right) {
+        return io::path_to_utf8(left.filename()) < io::path_to_utf8(right.filename());
+    });
+    return inputs;
 }
 
 std::string banner() {
@@ -125,13 +204,21 @@ std::string banner() {
 }
 
 std::string usage() {
-    return "Usage: RenderOJN <input.ojn> [--difficulty e|n|h] [--rendermode quick|realtime]\n"
+    return "Usage: RenderOJN <input.ojn | folder> [--difficulty e|n|h] [--rendermode quick|realtime]\n"
            "                 [--tracks all|keysounds|background]\n"
-           "                 [--format wav|mp3|ogg] [--outfile <path>] [--quality 1|2|3]\n"
+           "                 [--format wav|mp3|ogg] [--outfile <path>] [--outdir <folder>]\n"
+           "                 [--title-as-filename] [--no-cover-art] [--quality 1|2|3]\n"
            "                 [--sample-package <path>] [--play] [--help]\n"
            "\nDefaults: difficulty h, rendermode quick, tracks all, format mp3, quality 3.\n"
            "\n--tracks selects which notes to sound: keysounds are the playable lanes,\n"
-           "background is the autoplay/BGM stream. All modes keep the same length.\n";
+           "background is the autoplay/BGM stream. All modes keep the same length.\n"
+           "\nOutput is named <input stem>[_keysounds|_background].<format> beside the\n"
+           "input, or in --outdir. --title-as-filename uses the chart's title instead\n"
+           "of the input stem. --outfile names the file itself (the extension is\n"
+           "optional and follows --format). A folder input renders every .ojn in it,\n"
+           "into <folder>/render unless --outdir is given.\n"
+           "\nMP3 and Ogg carry the chart's title, artist and cover art; --no-cover-art\n"
+           "leaves the picture out.\n";
 }
 
 void collect_play_warnings(const Options& options, Diagnostics& diagnostics) {

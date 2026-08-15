@@ -16,6 +16,8 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include <limits>
 
 TEST_CASE("SHA-256 matches standard known vectors") {
@@ -216,14 +218,89 @@ TEST_CASE("CLI parses the track selection and defaults to all") {
     CHECK(renderojn::app::parse_cli({"song.ojn", "--tracks", "background"}).tracks == TrackSelection::Background);
 }
 
+namespace {
+
+// Resolves the output for a parsed command line against its own input.
+std::filesystem::path resolve(const renderojn::app::Options& options, const std::string& title = "") {
+    return renderojn::app::resolve_output_path(options, options.input, title);
+}
+
+} // namespace
+
 TEST_CASE("CLI output extensions are exact and never duplicated") {
     const auto plain = renderojn::app::parse_cli({"folder/song.ojn", "--format", "wav"});
-    CHECK(renderojn::app::resolve_output_path(plain).extension() == ".wav");
+    CHECK(resolve(plain).extension() == ".wav");
     const auto named = renderojn::app::parse_cli({"song.ojn", "--format", "wav", "--outfile", "mix.wav"});
-    CHECK(renderojn::app::resolve_output_path(named).filename() == "mix.wav");
+    CHECK(resolve(named).filename() == "mix.wav");
     const auto unextended = renderojn::app::parse_cli({"song.ojn", "--format", "ogg", "--outfile", "mix"});
-    CHECK(renderojn::app::resolve_output_path(unextended).filename() == "mix.ogg");
-    CHECK_THROWS_AS(renderojn::app::resolve_output_path(renderojn::app::parse_cli({"song.ojn", "--format", "wav", "--outfile", "mix.mp3"})), renderojn::Error);
+    CHECK(resolve(unextended).filename() == "mix.ogg");
+    CHECK_THROWS_AS(resolve(renderojn::app::parse_cli({"song.ojn", "--format", "wav", "--outfile", "mix.mp3"})), renderojn::Error);
+}
+
+TEST_CASE("CLI default output name drops the .ojn extension and lands beside the input") {
+    CHECK(resolve(renderojn::app::parse_cli({"folder/song.ojn"})).filename() == "song.mp3");
+    CHECK(resolve(renderojn::app::parse_cli({"folder/song.ojn"})).parent_path() == std::filesystem::absolute("folder"));
+    CHECK(resolve(renderojn::app::parse_cli({"SONG.OJN", "--format", "ogg"})).filename() == "SONG.ogg");
+    CHECK(resolve(renderojn::app::parse_cli({"song"})).filename() == "song.mp3");
+    // Only .ojn is an extension the name can shed; anything else is part of it.
+    CHECK(resolve(renderojn::app::parse_cli({"song.new"})).filename() == "song.new.mp3");
+}
+
+TEST_CASE("CLI suffixes a track selection so stems never overwrite the full mix") {
+    CHECK(resolve(renderojn::app::parse_cli({"song.ojn", "--tracks", "keysounds"})).filename() == "song_keysounds.mp3");
+    CHECK(resolve(renderojn::app::parse_cli({"song.ojn", "--tracks", "background", "--format", "wav"})).filename() == "song_background.wav");
+    CHECK(resolve(renderojn::app::parse_cli({"song.ojn", "--tracks", "all"})).filename() == "song.mp3");
+    // An explicit --outfile is taken verbatim.
+    CHECK(resolve(renderojn::app::parse_cli({"song.ojn", "--tracks", "background", "--outfile", "mix.mp3"})).filename() == "mix.mp3");
+}
+
+TEST_CASE("CLI --title-as-filename uses the sanitized chart title, falling back to the input stem") {
+    const auto titled = renderojn::app::parse_cli({"o2ma100.ojn", "--title-as-filename", "--tracks", "background"});
+    CHECK(resolve(titled, "Fly: Magpie?").filename() == "Fly_ Magpie__background.mp3");
+    CHECK(resolve(titled, "Bach Alive").filename() == "Bach Alive_background.mp3");
+    CHECK(resolve(titled, "").filename() == "o2ma100_background.mp3");
+    CHECK(resolve(titled, "   ").filename() == "o2ma100_background.mp3");
+    CHECK(resolve(titled, "...").filename() == "o2ma100_background.mp3");
+    // Without the flag the title is ignored.
+    CHECK(resolve(renderojn::app::parse_cli({"o2ma100.ojn"}), "Bach Alive").filename() == "o2ma100.mp3");
+    // A UTF-8 title survives untouched.
+    const std::string korean = "\xEC\x9C\xA0\xEB\xA0\xB9";  // 유령
+    CHECK(renderojn::io::path_to_utf8(resolve(renderojn::app::parse_cli({"o2ma100.ojn", "--title-as-filename"}), korean).filename()) == korean + ".mp3");
+}
+
+TEST_CASE("CLI --outdir redirects the default name and rejects --outfile beside it") {
+    const auto redirected = renderojn::app::parse_cli({"charts/song.ojn", "--outdir", "out"});
+    CHECK(resolve(redirected) == std::filesystem::path("out") / "song.mp3");
+    CHECK_THROWS_AS(renderojn::app::validate_output_options(renderojn::app::parse_cli({"song.ojn", "--outdir", "out", "--outfile", "x.mp3"}), false), renderojn::Error);
+    CHECK_THROWS_AS(renderojn::app::validate_output_options(renderojn::app::parse_cli({"charts", "--outfile", "x.mp3"}), true), renderojn::Error);
+    CHECK_THROWS_AS(renderojn::app::validate_output_options(renderojn::app::parse_cli({"charts", "--play"}), true), renderojn::Error);
+    CHECK_NOTHROW(renderojn::app::validate_output_options(renderojn::app::parse_cli({"charts", "--outdir", "out"}), true));
+    CHECK_NOTHROW(renderojn::app::validate_output_options(renderojn::app::parse_cli({"song.ojn", "--outfile", "x.mp3"}), false));
+}
+
+TEST_CASE("filename sanitizer replaces what no filesystem accepts and trims the ends") {
+    CHECK(renderojn::app::sanitize_filename("Fly Magpie") == "Fly Magpie");
+    CHECK(renderojn::app::sanitize_filename("a\\b/c:d*e?f\"g<h>i|j") == "a_b_c_d_e_f_g_h_i_j");
+    CHECK(renderojn::app::sanitize_filename("tab\there") == "tab_here");
+    CHECK(renderojn::app::sanitize_filename("  padded . ") == "padded");
+    CHECK(renderojn::app::sanitize_filename("...").empty());
+    CHECK(renderojn::app::sanitize_filename("").empty());
+    CHECK(renderojn::app::sanitize_filename("EVA-\xE6\xAE\x8B\xE9\x85\xB7") == "EVA-\xE6\xAE\x8B\xE9\x85\xB7");
+}
+
+TEST_CASE("batch input collection takes only top-level .ojn files, sorted") {
+    const auto root = std::filesystem::temp_directory_path() / "renderojn-batch-inputs";
+    std::error_code ignored;
+    std::filesystem::remove_all(root, ignored);
+    std::filesystem::create_directories(root / "sub");
+    for (const auto* name : {"b.ojn", "A.OJN", "c.ojm", "d.txt", "sub/e.ojn"}) {
+        std::ofstream(root / name, std::ios::binary) << "x";
+    }
+    const auto inputs = renderojn::app::collect_batch_inputs(root);
+    REQUIRE(inputs.size() == 2);
+    CHECK(inputs[0].filename() == "A.OJN");
+    CHECK(inputs[1].filename() == "b.ojn");
+    std::filesystem::remove_all(root, ignored);
 }
 
 TEST_CASE("UTF-8 path helpers round-trip text outside the ANSI code page") {
@@ -243,7 +320,7 @@ TEST_CASE("CLI accepts non-ASCII input and output paths verbatim") {
     const auto options = renderojn::app::parse_cli({input, "--outfile", output});
     CHECK(renderojn::io::path_to_utf8(options.input) == input);
     REQUIRE(options.output.has_value());
-    CHECK(renderojn::io::path_to_utf8(renderojn::app::resolve_output_path(options)) == output);
+    CHECK(renderojn::io::path_to_utf8(resolve(options)) == output);
 }
 
 TEST_CASE("CLI explains how to quote a path when a second positional appears") {
