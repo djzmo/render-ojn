@@ -13,12 +13,10 @@
 namespace renderojn::app {
 
 enum class OutputFormat { Wav, Mp3, Ogg };
-enum class RenderMode { Quick, Realtime };
 
 struct Options {
     std::filesystem::path input;
     format::Difficulty difficulty{format::Difficulty::Hard};
-    RenderMode render_mode{RenderMode::Quick};
     OutputFormat output_format{OutputFormat::Mp3};
     render::TrackSelection tracks{render::TrackSelection::All};
     int quality{3};
@@ -27,7 +25,6 @@ struct Options {
     bool format_set{};
     bool output_set{};
     bool quality_set{};
-    bool render_mode_set{};
     std::optional<std::filesystem::path> output;
     std::optional<std::filesystem::path> outdir;
     std::optional<std::filesystem::path> sample_package;

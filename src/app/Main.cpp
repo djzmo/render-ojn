@@ -55,10 +55,6 @@ renderojn::output::Format map_format(renderojn::app::OutputFormat value) {
     return renderojn::output::Format::Ogg;
 }
 
-renderojn::render::SchedulingMode map_mode(renderojn::app::RenderMode value) {
-    return value == renderojn::app::RenderMode::Quick ? renderojn::render::SchedulingMode::Quick : renderojn::render::SchedulingMode::Realtime;
-}
-
 void print_warnings(const renderojn::Diagnostics& diagnostics, const char* indent = "") {
     for (const auto& warning : diagnostics.warnings()) std::cerr << indent << "warning: " << warning << '\n';
 }
@@ -113,11 +109,13 @@ std::filesystem::path render_one(const renderojn::app::Options& options, const s
     // driver's up-front create_directories does not conflict.
     if (options.outdir) std::filesystem::create_directories(*options.outdir);
     const auto tags = renderojn::app::build_chart_tags(header, *normalized, options.cover_art, diagnostics);
-    const auto mode = map_mode(options.render_mode);
+    // A file render always uses Quick scheduling: it places every trigger at its
+    // exact frame, and it is not wall-clock paced.  (Realtime scheduling only
+    // exists for --play, which the audio device paces.)
     renderojn::output::encode_transactionally(map_format(options.output_format), destination, renderojn::render::output_frame_count(compatible_chart),
                                                options.quality, tags,
                                                [&](const auto& consumer) {
-                                                   renderojn::render::mix_chart(compatible_chart, samples, mode, mode == renderojn::render::SchedulingMode::Realtime,
+                                                   renderojn::render::mix_chart(compatible_chart, samples, renderojn::render::SchedulingMode::Quick, false,
                                                                                 consumer, diagnostics, options.tracks);
                                                });
     // The file is on disk now, so report any rename -- the numbered file is
