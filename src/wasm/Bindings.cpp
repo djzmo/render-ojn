@@ -176,6 +176,13 @@ RenderResult render_chart(const emscripten::val& ojn_bytes, const emscripten::va
     const bool report_progress = !on_progress.isUndefined() && !on_progress.isNull();
 
     std::uint64_t produced{};
+    // Realtime scheduling delivers 48-frame blocks, so a full-length chart would
+    // fire tens of thousands of progress callbacks -- each one a worker message
+    // and a React render.  Report only when the fraction has advanced by at
+    // least this much (and always the final 1.0 below), which caps it near 200
+    // updates regardless of block size.
+    constexpr double kProgressStep = 0.005;
+    double last_reported = -1.0;
     const auto encoded = output::encode_to_buffer(
         static_cast<output::Format>(format_value), total_frames, quality, tags,
         [&](const auto& consume) {
@@ -189,12 +196,18 @@ RenderResult render_chart(const emscripten::val& ojn_bytes, const emscripten::va
                                   consume(frames, frame_count);
                                   produced += frame_count;
                                   if (report_progress && total_frames > 0) {
-                                      on_progress(static_cast<double>(produced) /
-                                                  static_cast<double>(total_frames));
+                                      const double fraction =
+                                          static_cast<double>(produced) / static_cast<double>(total_frames);
+                                      if (fraction - last_reported >= kProgressStep) {
+                                          last_reported = fraction;
+                                          on_progress(fraction);
+                                      }
                                   }
                               },
                               diagnostics, static_cast<render::TrackSelection>(tracks));
         });
+    // A final 1.0 so the bar always lands full even if the last step was small.
+    if (report_progress && total_frames > 0 && last_reported < 1.0) on_progress(1.0);
 
     RenderResult result;
     result.bytes = emscripten::val(emscripten::typed_memory_view(encoded.size(), encoded.data()));

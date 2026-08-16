@@ -69,6 +69,12 @@ export function useQueue() {
   // slow enough to need its own state so the button can say so.
   const [isPacking, setIsPacking] = React.useState(false)
 
+  // Bumped whenever a render setting changes. A render captures the value at
+  // start and its result is dropped if the value has moved on by the time it
+  // finishes -- otherwise a render begun under Quick could land as a "done"
+  // download while the controls already say Realtime.
+  const settingsGeneration = React.useRef(0)
+
   // Object URLs outlive React state, so they are tracked for explicit revoke.
   const objectUrls = React.useRef(new Set<string>())
   React.useEffect(() => {
@@ -209,6 +215,9 @@ export function useQueue() {
    * download that no longer matches what the controls say.
    */
   const discardResults = React.useCallback(() => {
+    // Invalidate any render still in flight: its result belonged to the old
+    // settings, so accepting it would leave a mismatched download.
+    settingsGeneration.current += 1
     setCharts((current) =>
       current.map((chart) => {
         if (chart.render.status !== "done") return chart
@@ -285,6 +294,9 @@ export function useQueue() {
       const renderQuality = quality
       const renderTracks = tracks
       const renderScheduling = renderMode
+      // The generation these settings belong to; if the user changes a setting
+      // while this render is in flight, the result is discarded on arrival.
+      const generation = settingsGeneration.current
 
       updateChart(id, (chart) => ({
         ...chart,
@@ -315,6 +327,11 @@ export function useQueue() {
           }
         )
 
+        // A setting changed while this was rendering: the bytes are for the old
+        // settings, so drop them rather than present a mismatched download. The
+        // discardResults call already reset the row to idle.
+        if (settingsGeneration.current !== generation) return
+
         const blob = new Blob([bytes as BlobPart], {
           type: MIME_TYPES[renderFormat],
         })
@@ -339,6 +356,8 @@ export function useQueue() {
           description: `${DIFFICULTY_NAMES[difficulty]} · ${renderFormat.toUpperCase()}`,
         })
       } catch (error) {
+        // A superseded render's failure is not the current settings' failure.
+        if (settingsGeneration.current !== generation) return
         const message = messageFrom(error, "The render failed.")
         updateChart(id, (chart) => ({
           ...chart,
