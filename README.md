@@ -20,10 +20,8 @@ See it in action: https://www.youtube.com/watch?v=snYnd_IvmbM
 
 ## Usage Notes ##
 
-- In realtime mode, it is HIGHLY recommended to do nothing with your computer
-  while rendering a keysounded music to preserve output quality.
-- In quick mode, each trigger is placed at its exact target-frame offset, so
-  keysounded music no longer loses timing accuracy the way it did before v1.0.0.
+- Each trigger is placed at its exact target-frame offset, so keysounded music
+  no longer loses timing accuracy the way it did before v1.0.0.
 
 ## Version History ##
 
@@ -49,8 +47,11 @@ See it in action: https://www.youtube.com/watch?v=snYnd_IvmbM
 - The chart's cover art is embedded in MP3 (ID3v2 APIC) and Ogg
   (METADATA_BLOCK_PICTURE) output; `--no-cover-art` leaves it out.
 - The web app's format, bitrate and tracks controls now show the active
-  choice clearly, and it gained a Quick/Realtime scheduling control matching
-  the CLI's `--rendermode`.
+  choice clearly.
+- Removed the `--rendermode` option (and its web control). Its realtime mode
+  was a leftover of the pre-v1.0.0 FMOD engine; the current mixer is
+  sample-accurate, so file output is always placed at exact frames. Live
+  playback (`--play`) is unaffected.
 
 ### v1.0.2
 - Added `--tracks` to render one note role in isolation: `keysounds` for the
@@ -92,7 +93,6 @@ Usage: ```RenderOJN [inputfile [options]]```
 Rendering Options:
 
 ```
-  --rendermode <mode>       Rendering Mode (quick, realtime). Default: quick
   --tracks <selection>      Which notes to sound (all, keysounds, background).
                             Default: all. keysounds are the playable lanes;
                             background is the autoplay/BGM stream. All three
@@ -127,7 +127,7 @@ Example:
 
 ```
 RenderOJN o2ma100.ojn --outfile BachAlive.mp3 --quality 2
-RenderOJN o2ma100.ojn --rendermode realtime --format wav
+RenderOJN o2ma100.ojn --format wav
 RenderOJN o2ma100.ojn --tracks keysounds --format wav
 RenderOJN o2ma100.ojn --tracks background         (writes o2ma100_background.mp3)
 RenderOJN o2ma100.ojn --title-as-filename         (writes Bach Alive.mp3)
@@ -159,11 +159,11 @@ CXO2 implementation and synthetic tests instead.
 would an ordinary one. All 958 charts across three retail installations parse,
 decode, and render.
 
-Both rendering modes use deterministic float32 stereo mixing at 48 kHz, a
-100-voice cap, note type-3 skip, and note-type-4 `RefID + 1000` mapping. Quick
-mode is unpaced and processes 1,024-frame blocks, placing each trigger at its
-exact intra-block offset; realtime uses 48-frame scheduling with wall-clock
-pacing.
+Rendering uses deterministic float32 stereo mixing at 48 kHz, a 100-voice cap,
+note type-3 skip, and note-type-4 `RefID + 1000` mapping. File output processes
+unpaced 1,024-frame blocks, placing each trigger at its exact intra-block
+offset. Live playback (`--play`) instead drives the audio device with 48-frame
+scheduling, paced by the device rather than a wall-clock loop.
 
 See [docs/compatibility.md](docs/compatibility.md) for the full scope.
 

@@ -15,9 +15,9 @@ static `renderojn_core` layers:
 4. `core/audio` validates Ogg/Vorbis framing before in-memory libsndfile decode,
    then resamples linearly to float32 stereo/48 kHz; miniaudio provides realtime playback.
 5. `core/render` applies note mapping and mixes a maximum of 100 voices
-   deterministically. Quick mode processes unpaced 1,024-frame blocks while
-   placing triggers at exact intra-block frame offsets; realtime uses 48-frame
-   scheduling.
+   deterministically. File output uses quick scheduling -- unpaced 1,024-frame
+   blocks placing triggers at exact intra-block frame offsets; the realtime
+   48-frame scheduling mode remains for live playback (`--play`).
 6. `core/output` writes PCM16 WAV, LAME MP3, or Vorbis Ogg transactionally and
    applies metadata, including the cover art as an ID3v2 APIC frame or a Xiph
    METADATA_BLOCK_PICTURE.
@@ -29,8 +29,8 @@ measure fractions, channel-1 BPM changes, and note records with their exact
 measure adjustments, orders tempo changes before notes at equal positions,
 integrates BPM chronologically, and rounds the resulting seconds once to
 48 kHz frames. The mixer therefore receives an already-normalized timeline;
-quick mode uses those frames for exact intra-block placement while realtime
-retains its 48-frame scheduling behavior.
+file output uses those frames for exact intra-block placement, while live
+playback retains the 48-frame scheduling behavior.
 
 The OJN normalizer is intentionally a separate seam, and it is where Korea-era
 `new` wrappers are handled.  A `new` file holds an ordinary OJN behind a byte

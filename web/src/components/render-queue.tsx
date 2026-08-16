@@ -22,16 +22,12 @@ import {
   QUALITY_DETAIL,
   QUALITY_LABELS,
   QUALITY_VALUES,
-  RENDER_MODE_DETAIL,
-  RENDER_MODE_LABELS,
-  RENDER_MODES,
   TRACKS_DETAIL,
   TRACKS_LABELS,
   TRACKS_OPTIONS,
   type Difficulty,
   type OutputFormat,
   type Quality,
-  type RenderMode,
   type Tracks,
 } from "@/lib/renderojn"
 
@@ -44,8 +40,6 @@ interface RenderQueueProps {
   onQualityChange: (quality: Quality) => void
   tracks: Tracks
   onTracksChange: (tracks: Tracks) => void
-  renderMode: RenderMode
-  onRenderModeChange: (renderMode: RenderMode) => void
   rejected: string[]
   onDismissRejected: () => void
   onFiles: (files: File[]) => void
@@ -70,8 +64,6 @@ export function RenderQueue({
   onQualityChange,
   tracks,
   onTracksChange,
-  renderMode,
-  onRenderModeChange,
   rejected,
   onDismissRejected,
   onFiles,
@@ -218,40 +210,6 @@ export function RenderQueue({
 
             <span id="tracks-note" className="sr-only">
               {TRACKS_DETAIL[tracks]}
-            </span>
-
-            <Separator orientation="vertical" className="hidden h-6 sm:block" />
-
-            {/*
-             * Scheduling mode, mirroring the CLI's --rendermode. Quick places
-             * each trigger at its exact frame; Realtime uses the 48-frame
-             * scheduling the game engine drove audio with. The browser never
-             * wall-clock-paces, so this only changes the scheduling.
-             */}
-            <ToggleGroup
-              value={[renderMode]}
-              onValueChange={(value) => {
-                if (value.length) onRenderModeChange(value[0] as RenderMode)
-              }}
-              variant="outline"
-              size="sm"
-              spacing={0}
-              aria-label="Scheduling mode"
-              aria-describedby="rendermode-note"
-            >
-              {RENDER_MODES.map((option) => (
-                <ToggleGroupItem
-                  key={option}
-                  value={option}
-                  title={RENDER_MODE_DETAIL[option]}
-                >
-                  {RENDER_MODE_LABELS[option]}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-
-            <span id="rendermode-note" className="sr-only">
-              {RENDER_MODE_DETAIL[renderMode]}
             </span>
           </div>
         </CardHeader>
