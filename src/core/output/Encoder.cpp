@@ -141,6 +141,19 @@ void apply_tags(TagLib::File& file, const Tags& tags) {
     }
 }
 
+// Persists the tags we just set.  For MP3 this writes only the ID3v2 tag and
+// strips any ID3v1: TagLib's default MPEG save mirrors every field into an
+// ID3v1 tag too, and ID3v1 has no UTF-8 -- its string handler renders a
+// non-Latin-1 title as empty bytes, so a Korean/Japanese track would carry a
+// blank ID3v1 title beside the correct ID3v2 one.  Everything else (Ogg) uses
+// the generic save.
+[[nodiscard]] bool save_tagged(TagLib::File& file) {
+    if (auto* mpeg = dynamic_cast<TagLib::MPEG::File*>(&file)) {
+        return mpeg->save(TagLib::MPEG::File::ID3v2, TagLib::File::StripOthers);
+    }
+    return file.save();
+}
+
 void tag_file(const std::filesystem::path& path, const Tags& tags) {
     // path::c_str() is wchar_t* on Windows and char* elsewhere; TagLib::FileName
     // accepts both, so this opens Unicode paths correctly on every platform.
@@ -149,7 +162,7 @@ void tag_file(const std::filesystem::path& path, const Tags& tags) {
         throw Error(ExitCode::Runtime, "Unable to tag output: " + io::path_to_utf8(path));
     }
     apply_tags(*file.file(), tags);
-    if (!file.save()) throw Error(ExitCode::Runtime, "Unable to save output tags: " + io::path_to_utf8(path));
+    if (!save_tagged(*file.file())) throw Error(ExitCode::Runtime, "Unable to save output tags: " + io::path_to_utf8(path));
 }
 
 // Tags an already-encoded buffer in place.  TagLib's ByteVectorStream is a full
@@ -161,7 +174,7 @@ void tag_buffer(std::vector<std::uint8_t>& bytes, const Tags& tags) {
     TagLib::FileRef file(&stream);
     if (file.isNull() || file.file() == nullptr || file.tag() == nullptr) throw Error(ExitCode::Runtime, "Unable to tag encoded audio");
     apply_tags(*file.file(), tags);
-    if (!file.save()) throw Error(ExitCode::Runtime, "Unable to save tags onto encoded audio");
+    if (!save_tagged(*file.file())) throw Error(ExitCode::Runtime, "Unable to save tags onto encoded audio");
     const auto* data = stream.data();
     bytes.assign(data->begin(), data->end());
 }
