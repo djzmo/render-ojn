@@ -14,6 +14,7 @@ import {
   type OutputFormat,
   type ProgressCallback,
   type Quality,
+  type RenderMode,
   type RenderOjnModule,
   type RenderResult,
   type Tracks,
@@ -126,10 +127,11 @@ export function createWorkerModule(): RenderOjnModule {
       format: OutputFormat,
       quality: Quality,
       tracks: Tracks,
+      renderMode: RenderMode,
       onProgress: ProgressCallback
     ): Promise<RenderResult> {
       const { value, warnings } = await send(
-        { kind: "render", ojn, ojm, difficulty, format, quality, tracks },
+        { kind: "render", ojn, ojm, difficulty, format, quality, tracks, renderMode },
         [ojn.buffer, ojm.buffer],
         onProgress
       )

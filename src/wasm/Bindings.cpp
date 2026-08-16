@@ -121,7 +121,7 @@ OjnInfo read_ojn_info(const emscripten::val& ojn_bytes) {
 // Named render_chart rather than render: `using namespace renderojn` makes the
 // renderojn::render namespace visible, and a bare `render` is ambiguous.
 RenderResult render_chart(const emscripten::val& ojn_bytes, const emscripten::val& ojm_bytes, int difficulty,
-                          int format_value, int quality, int tracks, emscripten::val on_progress) {
+                          int format_value, int quality, int tracks, int render_mode, emscripten::val on_progress) {
     Diagnostics diagnostics;
 
     if (difficulty < 0 || difficulty > 2) {
@@ -133,6 +133,10 @@ RenderResult render_chart(const emscripten::val& ojn_bytes, const emscripten::va
     // Mirrors render::TrackSelection {All = 0, Keysounds = 1, Background = 2}.
     if (tracks < 0 || tracks > 2) {
         throw_js_error("Tracks must be 0 (All), 1 (Keysounds), or 2 (Background)");
+    }
+    // Mirrors render::SchedulingMode {Quick = 0, Realtime = 1}.
+    if (render_mode < 0 || render_mode > 1) {
+        throw_js_error("Render mode must be 0 (Quick) or 1 (Realtime)");
     }
     // Same range the CLI enforces (src/app/Cli.cpp).  Without this an
     // out-of-range value falls through to the lowest bitrate tier in
@@ -175,10 +179,12 @@ RenderResult render_chart(const emscripten::val& ojn_bytes, const emscripten::va
     const auto encoded = output::encode_to_buffer(
         static_cast<output::Format>(format_value), total_frames, quality, tags,
         [&](const auto& consume) {
-            // Realtime scheduling and wall-clock pacing exist for live playback,
-            // which the browser build does not offer; Quick is the only mode
-            // that makes sense when the destination is a downloaded file.
-            render::mix_chart(compatible_chart, samples, render::SchedulingMode::Quick, false,
+            // Realtime *scheduling* (48-frame blocks with onset quantization) is
+            // offered as an option, but wall-clock pacing is not: it would sleep
+            // for the length of the song, which makes no sense for a file the
+            // user is downloading.  So the mode is honored, the pacing flag is
+            // always false.
+            render::mix_chart(compatible_chart, samples, static_cast<render::SchedulingMode>(render_mode), false,
                               [&](const float* frames, std::size_t frame_count) {
                                   consume(frames, frame_count);
                                   produced += frame_count;
@@ -222,9 +228,10 @@ OjnInfo read_ojn_info_js(const emscripten::val& ojn_bytes) {
 }
 
 RenderResult render_chart_js(const emscripten::val& ojn_bytes, const emscripten::val& ojm_bytes, int difficulty,
-                             int format_value, int quality, int tracks, emscripten::val on_progress) {
-    return with_js_errors(
-        [&] { return render_chart(ojn_bytes, ojm_bytes, difficulty, format_value, quality, tracks, on_progress); });
+                             int format_value, int quality, int tracks, int render_mode, emscripten::val on_progress) {
+    return with_js_errors([&] {
+        return render_chart(ojn_bytes, ojm_bytes, difficulty, format_value, quality, tracks, render_mode, on_progress);
+    });
 }
 
 } // namespace

@@ -117,6 +117,38 @@ export const TRACKS_DETAIL: Record<Tracks, string> = {
 export const DEFAULT_TRACKS: Tracks = "all"
 
 /**
+ * How the mixer schedules triggers, mirroring the CLI's `--rendermode`. Quick
+ * places each trigger at its exact frame in unpaced 1,024-frame blocks;
+ * Realtime uses 48-frame scheduling with onset quantization, matching how the
+ * game engine drove audio live. The browser never wall-clock-paces (that would
+ * take as long as the song), so this only changes the scheduling, not the wait.
+ */
+export type RenderMode = "quick" | "realtime"
+
+export const RENDER_MODES: readonly RenderMode[] = ["quick", "realtime"]
+
+/** Mirrors `render::SchedulingMode` in `src/core/render/Mixer.hpp`. */
+export const RENDER_MODE_VALUES: Record<RenderMode, 0 | 1> = {
+  quick: 0,
+  realtime: 1,
+}
+
+/** Short control labels. */
+export const RENDER_MODE_LABELS: Record<RenderMode, string> = {
+  quick: "Quick",
+  realtime: "Realtime",
+}
+
+/** Long form for the control's tooltips and description. */
+export const RENDER_MODE_DETAIL: Record<RenderMode, string> = {
+  quick: "Exact onsets, unpaced — the default",
+  realtime: "48-frame scheduling, as the game engine drove audio live",
+}
+
+/** Matches the CLI default (`--rendermode quick`). */
+export const DEFAULT_RENDER_MODE: RenderMode = "quick"
+
+/**
  * Filename suffix for a track selection, mirroring the CLI's
  * `<stem>_keysounds.<ext>` / `<stem>_background.<ext>`: the parameter name
  * itself, and nothing for the full mix, so a stem never overwrites the mix
@@ -154,6 +186,7 @@ export interface RenderOjnModule {
     format: OutputFormat,
     quality: Quality,
     tracks: Tracks,
+    renderMode: RenderMode,
     onProgress: ProgressCallback
   ): Promise<RenderResult>
 }

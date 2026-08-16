@@ -15,6 +15,7 @@ import {
   type OutputFormat,
   type ProgressCallback,
   type Quality,
+  type RenderMode,
   type RenderOjnModule,
   type RenderResult,
   type Tracks,
@@ -128,8 +129,10 @@ async function render(
   format: OutputFormat,
   quality: Quality,
   // Accepted to match the real module's signature; the fake output does not
-  // vary by role, but the parameter must exist so callers type-check.
+  // vary by role or scheduling, but the parameters must exist so callers
+  // type-check.
   _tracks: Tracks,
+  _renderMode: RenderMode,
   onProgress: ProgressCallback
 ): Promise<RenderResult> {
   const steps = 40

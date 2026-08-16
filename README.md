@@ -49,7 +49,8 @@ See it in action: https://www.youtube.com/watch?v=snYnd_IvmbM
 - The chart's cover art is embedded in MP3 (ID3v2 APIC) and Ogg
   (METADATA_BLOCK_PICTURE) output; `--no-cover-art` leaves it out.
 - The web app's format, bitrate and tracks controls now show the active
-  choice clearly.
+  choice clearly, and it gained a Quick/Realtime scheduling control matching
+  the CLI's `--rendermode`.
 
 ### v1.0.2
 - Added `--tracks` to render one note role in isolation: `keysounds` for the
