@@ -280,7 +280,8 @@ function RowAction({
     const name = downloadName(
       entry,
       DIFFICULTY_NAMES[entry.difficulty ?? DEFAULT_DIFFICULTY],
-      entry.render.format
+      entry.render.format,
+      entry.render.tracks
     )
     return (
       <div className="flex items-center gap-1.5">

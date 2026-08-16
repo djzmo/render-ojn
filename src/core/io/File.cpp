@@ -1,6 +1,7 @@
 #include "core/io/File.hpp"
 
 #include "core/Diagnostic.hpp"
+#include "core/io/Path.hpp"
 
 #include <chrono>
 #include <random>
@@ -16,10 +17,15 @@ std::filesystem::path unique_temporary_path(const std::filesystem::path& destina
     std::random_device device;
     std::mt19937_64 random(device());
     const auto parent = destination.parent_path().empty() ? std::filesystem::current_path() : destination.parent_path();
-    const auto stem = destination.filename().string();
     for (int attempt = 0; attempt < 32; ++attempt) {
         const auto token = std::to_string(random());
-        const auto candidate = parent / ("." + stem + ".renderojn-" + token + ".tmp");
+        // Concatenate as paths rather than through .string(): on Windows the
+        // narrow round trip goes through the active code page and mangles
+        // any filename outside it.
+        auto name = std::filesystem::path(".");
+        name += destination.filename();
+        name += ".renderojn-" + token + ".tmp";
+        const auto candidate = parent / name;
         if (!std::filesystem::exists(candidate)) {
             return candidate;
         }
@@ -33,11 +39,11 @@ TransactionalFile::TransactionalFile(std::filesystem::path destination) : destin
     std::error_code error;
     const auto parent = temporary_.parent_path();
     if (!parent.empty() && !std::filesystem::exists(parent, error)) {
-        throw Error(ExitCode::Runtime, "Output directory does not exist: " + parent.string());
+        throw Error(ExitCode::Runtime, "Output directory does not exist: " + path_to_utf8(parent));
     }
     stream_.open(temporary_, std::ios::binary | std::ios::trunc);
     if (!stream_) {
-        throw Error(ExitCode::Runtime, "Unable to create temporary output in: " + parent.string());
+        throw Error(ExitCode::Runtime, "Unable to create temporary output in: " + path_to_utf8(parent));
     }
 }
 
@@ -54,12 +60,12 @@ void TransactionalFile::commit() {
     std::error_code error;
 #ifdef _WIN32
     if (!::MoveFileExW(temporary_.c_str(), destination_.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-        throw Error(ExitCode::Runtime, "Unable to publish output: " + destination_.string());
+        throw Error(ExitCode::Runtime, "Unable to publish output: " + path_to_utf8(destination_));
     }
 #else
     std::filesystem::rename(temporary_, destination_, error);
     if (error) {
-        throw Error(ExitCode::Runtime, "Unable to publish output: " + destination_.string());
+        throw Error(ExitCode::Runtime, "Unable to publish output: " + path_to_utf8(destination_));
     }
 #endif
     committed_ = true;

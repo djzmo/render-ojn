@@ -2,6 +2,7 @@
 
 #include "core/Diagnostic.hpp"
 #include "core/io/File.hpp"
+#include "core/io/Path.hpp"
 
 #include <algorithm>
 #include <array>
@@ -17,6 +18,11 @@
 #include <tag.h>
 #include <tbytevectorstream.h>
 #include <xiphcomment.h>
+#include <mpegfile.h>
+#include <id3v2tag.h>
+#include <attachedpictureframe.h>
+#include <vorbisfile.h>
+#include <flacpicture.h>
 #endif
 
 namespace renderojn::output {
@@ -98,34 +104,77 @@ void write_wav(ByteSink& sink, std::uint64_t frames, const PcmProducer& produce)
 #ifdef RENDEROJN_EXTERNAL_DEPS
 // The single definition of what a RenderOJN tag set looks like.  Both the file
 // and buffer paths call this, so neither can drift from the other.
-void apply_tags(TagLib::Tag& tag, const Tags& tags, bool ogg) {
-    tag.setTitle(TagLib::String(tags.title.c_str(), TagLib::String::Latin1));
-    tag.setArtist(TagLib::String(tags.artist.c_str(), TagLib::String::Latin1));
-    tag.setTrack(tags.track);
-    tag.setGenre(TagLib::String(tags.genre.c_str(), TagLib::String::Latin1));
-    tag.setComment(TagLib::String(tags.comment.c_str(), TagLib::String::UTF8));
-    if (ogg) {
-        if (auto* xiph = dynamic_cast<TagLib::Ogg::XiphComment*>(&tag)) xiph->removeFields("ENCODER");
+// The picture is format-specific, so this needs the concrete file rather than
+// the generic Tag interface: MP3 carries it as an ID3v2 APIC frame, Ogg as a
+// METADATA_BLOCK_PICTURE field in the Xiph comment.
+void apply_tags(TagLib::File& file, const Tags& tags) {
+    auto* tag = file.tag();
+    tag->setTitle(TagLib::String(tags.title, TagLib::String::UTF8));
+    tag->setArtist(TagLib::String(tags.artist, TagLib::String::UTF8));
+    tag->setTrack(tags.track);
+    tag->setGenre(TagLib::String(tags.genre, TagLib::String::UTF8));
+    tag->setComment(TagLib::String(tags.comment, TagLib::String::UTF8));
+
+    const TagLib::ByteVector picture(reinterpret_cast<const char*>(tags.cover.data()), static_cast<unsigned int>(tags.cover.size()));
+    if (auto* mpeg = dynamic_cast<TagLib::MPEG::File*>(&file)) {
+        if (!tags.cover.empty()) {
+            auto* id3v2 = mpeg->ID3v2Tag(true);
+            id3v2->removeFrames("APIC");
+            auto* frame = new TagLib::ID3v2::AttachedPictureFrame;
+            frame->setMimeType(TagLib::String(tags.cover_mime, TagLib::String::UTF8));
+            frame->setType(TagLib::ID3v2::AttachedPictureFrame::FrontCover);
+            frame->setPicture(picture);
+            id3v2->addFrame(frame);  // the tag owns the frame from here
+        }
+    } else if (auto* vorbis = dynamic_cast<TagLib::Ogg::Vorbis::File*>(&file)) {
+        auto* xiph = vorbis->tag();
+        // libsndfile stamps an ENCODER comment that must not survive.
+        xiph->removeFields("ENCODER");
+        if (!tags.cover.empty()) {
+            xiph->removeAllPictures();
+            auto* flac_picture = new TagLib::FLAC::Picture;
+            flac_picture->setType(TagLib::FLAC::Picture::FrontCover);
+            flac_picture->setMimeType(TagLib::String(tags.cover_mime, TagLib::String::UTF8));
+            flac_picture->setData(picture);
+            xiph->addPicture(flac_picture);  // the comment owns the picture from here
+        }
     }
 }
 
-void tag_file(const std::filesystem::path& path, const Tags& tags, bool ogg) {
-    TagLib::FileRef file(path.string().c_str());
-    if (file.isNull() || file.tag() == nullptr) throw Error(ExitCode::Runtime, "Unable to tag output: " + path.string());
-    apply_tags(*file.tag(), tags, ogg);
-    if (!file.save()) throw Error(ExitCode::Runtime, "Unable to save output tags: " + path.string());
+// Persists the tags we just set.  For MP3 this writes only the ID3v2 tag and
+// strips any ID3v1: TagLib's default MPEG save mirrors every field into an
+// ID3v1 tag too, and ID3v1 has no UTF-8 -- its string handler renders a
+// non-Latin-1 title as empty bytes, so a Korean/Japanese track would carry a
+// blank ID3v1 title beside the correct ID3v2 one.  Everything else (Ogg) uses
+// the generic save.
+[[nodiscard]] bool save_tagged(TagLib::File& file) {
+    if (auto* mpeg = dynamic_cast<TagLib::MPEG::File*>(&file)) {
+        return mpeg->save(TagLib::MPEG::File::ID3v2, TagLib::File::StripOthers);
+    }
+    return file.save();
+}
+
+void tag_file(const std::filesystem::path& path, const Tags& tags) {
+    // path::c_str() is wchar_t* on Windows and char* elsewhere; TagLib::FileName
+    // accepts both, so this opens Unicode paths correctly on every platform.
+    TagLib::FileRef file(path.c_str());
+    if (file.isNull() || file.file() == nullptr || file.tag() == nullptr) {
+        throw Error(ExitCode::Runtime, "Unable to tag output: " + io::path_to_utf8(path));
+    }
+    apply_tags(*file.file(), tags);
+    if (!save_tagged(*file.file())) throw Error(ExitCode::Runtime, "Unable to save output tags: " + io::path_to_utf8(path));
 }
 
 // Tags an already-encoded buffer in place.  TagLib's ByteVectorStream is a full
 // IOStream implementation, so this needs no filesystem at all -- which is what
 // makes tagging work in the WebAssembly build.
-void tag_buffer(std::vector<std::uint8_t>& bytes, const Tags& tags, bool ogg) {
+void tag_buffer(std::vector<std::uint8_t>& bytes, const Tags& tags) {
     TagLib::ByteVectorStream stream(TagLib::ByteVector(reinterpret_cast<const char*>(bytes.data()),
                                                       static_cast<unsigned int>(bytes.size())));
     TagLib::FileRef file(&stream);
-    if (file.isNull() || file.tag() == nullptr) throw Error(ExitCode::Runtime, "Unable to tag encoded audio");
-    apply_tags(*file.tag(), tags, ogg);
-    if (!file.save()) throw Error(ExitCode::Runtime, "Unable to save tags onto encoded audio");
+    if (file.isNull() || file.file() == nullptr || file.tag() == nullptr) throw Error(ExitCode::Runtime, "Unable to tag encoded audio");
+    apply_tags(*file.file(), tags);
+    if (!save_tagged(*file.file())) throw Error(ExitCode::Runtime, "Unable to save tags onto encoded audio");
     const auto* data = stream.data();
     bytes.assign(data->begin(), data->end());
 }
@@ -225,10 +274,17 @@ void write_ogg(io::TransactionalFile& output, std::uint64_t frames, int quality,
     info.samplerate = kSampleRate;
     info.channels = 2;
     info.format = SF_FORMAT_OGG | SF_FORMAT_VORBIS;
-    SndFileHandle file(sf_open(output.temporary_path().string().c_str(), SFM_WRITE, &info));
+    // On Windows libsndfile's sf_open decodes a char* path through the active
+    // code page (sndfile.c, CP_ACP), which corrupts any name outside the user's
+    // locale; sf_wchar_open takes the wide path directly.
+#ifdef _WIN32
+    SndFileHandle file(sf_wchar_open(output.temporary_path().c_str(), SFM_WRITE, &info));
+#else
+    SndFileHandle file(sf_open(output.temporary_path().c_str(), SFM_WRITE, &info));
+#endif
     if (file.get() == nullptr) throw Error(ExitCode::Runtime, "Unable to create Ogg output: " + std::string(sf_strerror(nullptr)));
     stream_ogg(file, frames, quality, produce);
-    tag_file(output.temporary_path(), tags, true);
+    tag_file(output.temporary_path(), tags);
 }
 
 // Writable in-memory backing for libsndfile.  Decoder.cpp already reads samples
@@ -296,7 +352,7 @@ std::vector<std::uint8_t> write_ogg_buffer(std::uint64_t frames, int quality, co
     SndFileHandle file(sf_open_virtual(&io, SFM_WRITE, &info, &buffer));
     if (file.get() == nullptr) throw Error(ExitCode::Runtime, "Unable to create Ogg output: " + std::string(sf_strerror(nullptr)));
     stream_ogg(file, frames, quality, produce);
-    tag_buffer(buffer.bytes, tags, true);
+    tag_buffer(buffer.bytes, tags);
     return std::move(buffer.bytes);
 }
 #endif
@@ -330,7 +386,7 @@ void encode_transactionally(Format format, const std::filesystem::path& destinat
             write_mp3(sink, frames, quality, produce);
             // Close before tagging: TagLib reopens the same path.
             output.close();
-            tag_file(output.temporary_path(), tags, false);
+            tag_file(output.temporary_path(), tags);
         } else {
             write_ogg(output, frames, quality, tags, produce);
         }
@@ -354,7 +410,7 @@ std::vector<std::uint8_t> encode_to_buffer(Format format, std::uint64_t frames, 
         BufferSink sink;
         write_mp3(sink, frames, quality, produce);
         auto bytes = std::move(sink.bytes());
-        tag_buffer(bytes, tags, false);
+        tag_buffer(bytes, tags);
         return bytes;
     }
     return write_ogg_buffer(frames, quality, tags, produce);

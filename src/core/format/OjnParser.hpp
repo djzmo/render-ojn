@@ -6,7 +6,9 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
+#include <vector>
 
 namespace renderojn::format {
 
@@ -25,5 +27,19 @@ namespace renderojn::format {
 // second copy of the table is a second thing to keep correct.
 // An out-of-range code warns and resolves to "Etc".
 [[nodiscard]] std::string genre_name(std::uint32_t genre, Diagnostics& diagnostics);
+
+struct CoverArt {
+    std::vector<std::uint8_t> bytes;
+    std::string mime;  // "image/jpeg" or "image/bmp"
+};
+
+// The chart's cover, if it carries one.  The JPEG (the game's newer format)
+// sits at chart_offsets[3] for new_cover_size bytes, with the older BMP right
+// after it for old_cover_size bytes; the JPEG is preferred.  A cover that does
+// not fit the file or does not start with its format's signature is reported
+// as a warning and skipped -- a bad picture must never fail a render.  Expects
+// the normalized buffer, as parse_ojn_header does.
+[[nodiscard]] std::optional<CoverArt> extract_cover_art(const io::ByteBuffer& normalized, const OjnHeader& header,
+                                                        Diagnostics& diagnostics);
 
 } // namespace renderojn::format

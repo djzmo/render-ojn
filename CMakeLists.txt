@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(RenderOJN VERSION 1.0.2 LANGUAGES CXX)
+project(RenderOJN VERSION 1.0.3 LANGUAGES CXX)
 
 if(MSVC)
   # Release and Debug both use the supported static /MT runtime.  mp3lame's
@@ -33,11 +33,14 @@ set(RENDEROJN_CORE_SOURCES
     src/core/crypto/Sha256.cpp
     src/core/compat/CompatibilityProfile.cpp
     src/core/format/OjnParser.cpp
+    src/core/text/Cp949.cpp
+    src/core/text/Cp949Table.cpp
     src/core/format/PackageParser.cpp
     src/core/audio/Decoder.cpp
     src/core/audio/OggNormalizer.cpp
     src/core/render/Mixer.cpp
     src/core/output/Encoder.cpp
+    src/app/ChartTags.cpp
     src/app/Cli.cpp)
 
 # Live playback drives an OS audio device through miniaudio, which the browser
@@ -127,6 +130,7 @@ if(EMSCRIPTEN)
 else()
   add_executable(RenderOJN src/app/Main.cpp)
   target_link_libraries(RenderOJN PRIVATE renderojn_core)
+  renderojn_apply_source_charset(RenderOJN)
   if(WIN32)
     target_sources(RenderOJN PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/RenderOJN.rc)
   endif()
@@ -135,8 +139,9 @@ endif()
 
 if(BUILD_TESTING AND RENDEROJN_BUILD_TESTS)
   find_package(Catch2 3 CONFIG REQUIRED)
-  add_executable(renderojn_tests tests/unit/CoreTests.cpp tests/integration/FlowTests.cpp)
+  add_executable(renderojn_tests tests/unit/CoreTests.cpp tests/unit/TextTests.cpp tests/integration/FlowTests.cpp)
   target_link_libraries(renderojn_tests PRIVATE renderojn_core Catch2::Catch2WithMain)
+  renderojn_apply_source_charset(renderojn_tests)
   add_test(NAME renderojn_tests COMMAND renderojn_tests)
 endif()
 

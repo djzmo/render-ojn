@@ -1,6 +1,6 @@
 {
   "name": "renderojn",
-  "version-string": "1.0.2",
+  "version-string": "1.0.3",
   "builtin-baseline": "ea1a7396b05637a53bf23c078647ecc0edee4b80",
   "dependencies": [
     "libsndfile",

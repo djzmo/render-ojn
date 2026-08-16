@@ -175,7 +175,7 @@ Package parse_m30(io::ByteReader input) {
     while (input.remaining() != 0) {
         if (++records > sample_count) malformed("M30 contains more records than declared");
         if (input.remaining() < 52) malformed("truncated M30 sample record");
-        static_cast<void>(input.latin1_fixed(32, "M30 sample name"));
+        static_cast<void>(input.raw_fixed(32, "M30 sample name"));
         const auto size = input.u32le("M30 sample size");
         const auto codec_code = input.u16le("M30 sample codec code");
         static_cast<void>(input.take(6, "M30 sample reserved field"));
@@ -221,7 +221,7 @@ Package parse_omc(io::ByteReader input, PackageKind kind) {
     std::uint32_t id = 1;
     for (std::uint32_t index = 0; index < wav_count; ++index, ++id) {
         if (input.remaining() < 56 || input.position() + 56 > ogg_offset) malformed("truncated PCM sample record");
-        static_cast<void>(input.latin1_fixed(32, "PCM sample name"));
+        static_cast<void>(input.raw_fixed(32, "PCM sample name"));
         const auto audio_format = input.u16le("PCM format");
         const auto channels = input.u16le("PCM channels");
         const auto sample_rate = input.u32le("PCM sample rate");
@@ -246,7 +246,7 @@ Package parse_omc(io::ByteReader input, PackageKind kind) {
     id = 1001;
     for (std::uint32_t index = 0; index < ogg_count; ++index, ++id) {
         if (input.remaining() < 36) malformed("truncated Ogg sample record");
-        static_cast<void>(input.latin1_fixed(32, "Ogg sample name"));
+        static_cast<void>(input.raw_fixed(32, "Ogg sample name"));
         const auto size = input.u32le("Ogg payload size");
         if (size > kMaxEncodedSampleBytes) malformed("Ogg sample exceeds 256 MiB limit");
         if (size == 0) {
@@ -262,7 +262,7 @@ Package parse_omc(io::ByteReader input, PackageKind kind) {
     // payload; arbitrary, truncated, or payload-bearing tails remain malformed.
     while (input.remaining() != 0) {
         if (input.remaining() < 36) malformed("truncated trailing Ogg directory record");
-        static_cast<void>(input.latin1_fixed(32, "trailing Ogg sentinel name"));
+        static_cast<void>(input.raw_fixed(32, "trailing Ogg sentinel name"));
         if (input.u32le("trailing Ogg sentinel payload size") != 0) {
             malformed("trailing Ogg record has an undeclared payload");
         }

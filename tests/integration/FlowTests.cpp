@@ -1,5 +1,6 @@
 #include "core/Diagnostic.hpp"
 #include "core/audio/Decoder.hpp"
+#include "core/io/Path.hpp"
 #include "core/output/Encoder.hpp"
 #include "core/render/Mixer.hpp"
 
@@ -25,6 +26,12 @@
 #include <tag.h>
 #include <tbytevectorstream.h>
 #include <xiphcomment.h>
+#include <mpegfile.h>
+#include <id3v2tag.h>
+#include <textidentificationframe.h>
+#include <attachedpictureframe.h>
+#include <vorbisfile.h>
+#include <flacpicture.h>
 #endif
 
 namespace {
@@ -301,6 +308,17 @@ sf_count_t memory_reader_write(const void*, sf_count_t, void*) { return 0; }
 sf_count_t memory_reader_tell(void* user) { return static_cast<MemoryReader*>(user)->position; }
 #endif
 
+#ifdef RENDEROJN_EXTERNAL_DEPS
+// sf_open decodes a char* through the ANSI code page on Windows; take the wide path there.
+SNDFILE* open_sndfile(const std::filesystem::path& path, int mode, SF_INFO* info) {
+#ifdef _WIN32
+    return sf_wchar_open(path.c_str(), mode, info);
+#else
+    return sf_open(path.c_str(), mode, info);
+#endif
+}
+#endif
+
 renderojn::output::Tags sample_tags() {
     renderojn::output::Tags tags{};
     tags.title = "Synthetic Title";
@@ -332,7 +350,7 @@ TEST_CASE("encoded MP3 and Ogg output carries exact tags and decodes to stereo 4
                                                   tone_producer(kFrames));
         REQUIRE(std::filesystem::exists(destination));
 
-        TagLib::FileRef tagged(destination.string().c_str());
+        TagLib::FileRef tagged(destination.c_str());
         REQUIRE_FALSE(tagged.isNull());
         REQUIRE(tagged.tag() != nullptr);
         CHECK(tagged.tag()->title() == TagLib::String("Synthetic Title"));
@@ -348,7 +366,7 @@ TEST_CASE("encoded MP3 and Ogg output carries exact tags and decodes to stereo 4
             CHECK(xiph->fieldListMap().find("ENCODER") == xiph->fieldListMap().end());
 
             SF_INFO info{};
-            SNDFILE* decoded = sf_open(destination.string().c_str(), SFM_READ, &info);
+            SNDFILE* decoded = open_sndfile(destination, SFM_READ, &info);
             REQUIRE(decoded != nullptr);
             CHECK(info.channels == 2);
             CHECK(info.samplerate == 48000);
@@ -377,6 +395,164 @@ TEST_CASE("encoded MP3 and Ogg output carries exact tags and decodes to stereo 4
 // (ogg_vorbis.c calls ogg_stream_init with psf_rand_int32, which reads
 // gettimeofday), so no two Ogg encodes are ever identical -- not even two file
 // encodes.  It is checked structurally instead, one case below.
+TEST_CASE("every encoder publishes to a destination whose name is outside the ANSI code page") {
+    constexpr std::size_t kFrames = 4800;
+    struct Case {
+        renderojn::output::Format format;
+        const char* extension;
+    };
+    std::vector<Case> cases{{renderojn::output::Format::Wav, ".wav"}};
+#ifdef RENDEROJN_EXTERNAL_DEPS
+    cases.push_back({renderojn::output::Format::Mp3, ".mp3"});
+    cases.push_back({renderojn::output::Format::Ogg, ".ogg"});
+#endif
+    // Its own subdirectory, so the leftover-temporary scan below sees only this
+    // test's files -- not another concurrent test process's in-flight temps, nor
+    // an unrelated %TEMP% entry with an un-decodable name.
+    const auto workdir = std::filesystem::temp_directory_path() / "renderojn-unicode-out";
+    std::error_code ignored;
+    std::filesystem::remove_all(workdir, ignored);
+    std::filesystem::create_directories(workdir);
+    for (const auto& item : cases) {
+        // "renderojn-" + hangul + extension, as UTF-8 escapes.
+        const auto destination = workdir / renderojn::io::utf8_to_path(std::string("renderojn-\xED\x95\x9C\xEA\xB8\x80") + item.extension);
+        std::filesystem::remove(destination, ignored);
+
+        renderojn::output::encode_transactionally(item.format, destination, kFrames, 3, sample_tags(),
+                                                  tone_producer(kFrames));
+        REQUIRE(std::filesystem::exists(destination));
+        CHECK(std::filesystem::file_size(destination) > 0);
+#ifdef RENDEROJN_EXTERNAL_DEPS
+        if (item.format != renderojn::output::Format::Wav) {
+            TagLib::FileRef tagged(destination.c_str());
+            REQUIRE_FALSE(tagged.isNull());
+            CHECK(tagged.tag()->title() == TagLib::String("Synthetic Title"));
+        }
+#endif
+        std::filesystem::remove(destination, ignored);
+    }
+    // Only the published files were created here, so once they are removed the
+    // directory is empty: no transactional temporary was left behind.
+    CHECK(std::filesystem::is_empty(workdir));
+    std::filesystem::remove_all(workdir, ignored);
+}
+
+#ifdef RENDEROJN_EXTERNAL_DEPS
+TEST_CASE("non-Latin tags survive MP3 and Ogg on both the file and buffer paths") {
+    constexpr std::size_t kFrames = 4800;
+    // Korean title/artist as UTF-8, the form the parser now hands the encoder.
+    const std::string title = "\xEC\x9C\xA0\xEB\xA0\xB9\xEC\x9D\x98\x20\xEC\xB6\x95\xEC\xA0\x9C" "2(Sneak)";
+    const std::string artist = "\xED\x95\x9C\xEA\xB8\x80";
+    auto tags = sample_tags();
+    tags.title = title;
+    tags.artist = artist;
+
+    struct Case {
+        renderojn::output::Format format;
+        const char* filename;
+        bool ogg;
+    };
+    const std::vector<Case> cases{{renderojn::output::Format::Mp3, "renderojn-utf8.mp3", false},
+                                  {renderojn::output::Format::Ogg, "renderojn-utf8.ogg", true}};
+    for (const auto& item : cases) {
+        INFO("format: " << item.filename);
+        const auto destination = std::filesystem::temp_directory_path() / item.filename;
+        std::error_code ignored;
+        std::filesystem::remove(destination, ignored);
+        renderojn::output::encode_transactionally(item.format, destination, kFrames, 1, tags, tone_producer(kFrames));
+
+        TagLib::FileRef from_file(destination.c_str());
+        REQUIRE_FALSE(from_file.isNull());
+        CHECK(from_file.tag()->title().to8Bit(true) == title);
+        CHECK(from_file.tag()->artist().to8Bit(true) == artist);
+        if (!item.ogg) {
+            // ID3v2.4 must carry the text as UTF-8, not a Latin-1 approximation.
+            auto* mpeg = dynamic_cast<TagLib::MPEG::File*>(from_file.file());
+            REQUIRE(mpeg != nullptr);
+            REQUIRE(mpeg->hasID3v2Tag());
+            const auto& frames = mpeg->ID3v2Tag()->frameListMap()["TIT2"];
+            REQUIRE_FALSE(frames.isEmpty());
+            auto* text = dynamic_cast<TagLib::ID3v2::TextIdentificationFrame*>(frames.front());
+            REQUIRE(text != nullptr);
+            CHECK(text->textEncoding() == TagLib::String::UTF8);
+            // No ID3v1 mirror: it has no UTF-8 and would carry a blank title.
+            CHECK_FALSE(mpeg->hasID3v1Tag());
+        }
+        std::filesystem::remove(destination, ignored);
+
+        auto bytes = renderojn::output::encode_to_buffer(item.format, kFrames, 1, tags, tone_producer(kFrames));
+        TagLib::ByteVectorStream stream(TagLib::ByteVector(reinterpret_cast<const char*>(bytes.data()),
+                                                          static_cast<unsigned int>(bytes.size())));
+        TagLib::FileRef from_buffer(&stream);
+        REQUIRE_FALSE(from_buffer.isNull());
+        CHECK(from_buffer.tag()->title().to8Bit(true) == title);
+        CHECK(from_buffer.tag()->artist().to8Bit(true) == artist);
+    }
+}
+
+TEST_CASE("cover art is embedded as a front cover in MP3 and Ogg, on file and buffer paths") {
+    constexpr std::size_t kFrames = 4800;
+    const std::vector<std::uint8_t> picture{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00, 0x01, 0x01, 0x00,
+                                            0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xD9};
+    auto tags = sample_tags();
+    tags.cover = picture;
+    tags.cover_mime = "image/jpeg";
+    const TagLib::ByteVector expected(reinterpret_cast<const char*>(picture.data()), static_cast<unsigned int>(picture.size()));
+
+    const auto check_mp3 = [&](TagLib::File* file) {
+        auto* mpeg = dynamic_cast<TagLib::MPEG::File*>(file);
+        REQUIRE(mpeg != nullptr);
+        REQUIRE(mpeg->hasID3v2Tag());
+        const auto& frames = mpeg->ID3v2Tag()->frameListMap()["APIC"];
+        REQUIRE(frames.size() == 1);
+        auto* apic = dynamic_cast<TagLib::ID3v2::AttachedPictureFrame*>(frames.front());
+        REQUIRE(apic != nullptr);
+        CHECK(apic->type() == TagLib::ID3v2::AttachedPictureFrame::FrontCover);
+        CHECK(apic->mimeType() == "image/jpeg");
+        CHECK(apic->picture() == expected);
+    };
+    const auto check_ogg = [&](TagLib::File* file) {
+        auto* vorbis = dynamic_cast<TagLib::Ogg::Vorbis::File*>(file);
+        REQUIRE(vorbis != nullptr);
+        const auto pictures = vorbis->tag()->pictureList();
+        REQUIRE(pictures.size() == 1);
+        CHECK(pictures.front()->type() == TagLib::FLAC::Picture::FrontCover);
+        CHECK(pictures.front()->mimeType() == "image/jpeg");
+        CHECK(pictures.front()->data() == expected);
+        CHECK(vorbis->tag()->fieldListMap().find("ENCODER") == vorbis->tag()->fieldListMap().end());
+    };
+
+    struct Case {
+        renderojn::output::Format format;
+        const char* filename;
+        bool ogg;
+    };
+    const std::vector<Case> cases{{renderojn::output::Format::Mp3, "renderojn-cover.mp3", false},
+                                  {renderojn::output::Format::Ogg, "renderojn-cover.ogg", true}};
+    for (const auto& item : cases) {
+        INFO("format: " << item.filename);
+        const auto destination = std::filesystem::temp_directory_path() / item.filename;
+        std::error_code ignored;
+        std::filesystem::remove(destination, ignored);
+        renderojn::output::encode_transactionally(item.format, destination, kFrames, 1, tags, tone_producer(kFrames));
+        {
+            TagLib::FileRef from_file(destination.c_str());
+            REQUIRE_FALSE(from_file.isNull());
+            CHECK(from_file.tag()->title() == TagLib::String("Synthetic Title"));
+            if (item.ogg) check_ogg(from_file.file()); else check_mp3(from_file.file());
+        }
+        std::filesystem::remove(destination, ignored);
+
+        auto bytes = renderojn::output::encode_to_buffer(item.format, kFrames, 1, tags, tone_producer(kFrames));
+        TagLib::ByteVectorStream stream(TagLib::ByteVector(reinterpret_cast<const char*>(bytes.data()),
+                                                          static_cast<unsigned int>(bytes.size())));
+        TagLib::FileRef from_buffer(&stream);
+        REQUIRE_FALSE(from_buffer.isNull());
+        if (item.ogg) check_ogg(from_buffer.file()); else check_mp3(from_buffer.file());
+    }
+}
+#endif
+
 TEST_CASE("encoding to a buffer is byte-identical to encoding to a file") {
     constexpr std::size_t kFrames = 24000;
     struct Case {
@@ -447,7 +623,7 @@ TEST_CASE("Ogg encoded to a buffer matches the file encoder everywhere it can") 
     sf_close(buffer_handle);
 
     SF_INFO file_info{};
-    SNDFILE* file_handle = sf_open(destination.string().c_str(), SFM_READ, &file_info);
+    SNDFILE* file_handle = open_sndfile(destination, SFM_READ, &file_info);
     REQUIRE(file_handle != nullptr);
     std::vector<float> file_samples(static_cast<std::size_t>(file_info.frames) * 2U);
     const auto file_read = sf_readf_float(file_handle, file_samples.data(), file_info.frames);

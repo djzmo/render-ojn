@@ -7,8 +7,11 @@ static `renderojn_core` layers:
    little-endian reads plus transactional output paths.
 2. `core/crypto` supplies an offline SHA-256 primitive used to bind compatibility
    profiles to exact immutable input pairs.
-3. `core/format` normalizes ordinary OJN input, parses bounded timelines, and
-   parses M30/OMC/OJM package records with explicit kind and flag validation.
+3. `core/format` normalizes ordinary OJN input, parses bounded timelines,
+   extracts the header's cover art, and parses M30/OMC/OJM package records
+   with explicit kind and flag validation.  `core/text` decodes the header's
+   CP949 text to UTF-8 from a generated table (tools/cp949), so the same code
+   serves the WebAssembly build.
 4. `core/audio` validates Ogg/Vorbis framing before in-memory libsndfile decode,
    then resamples linearly to float32 stereo/48 kHz; miniaudio provides realtime playback.
 5. `core/render` applies note mapping and mixes a maximum of 100 voices
@@ -16,7 +19,8 @@ static `renderojn_core` layers:
    placing triggers at exact intra-block frame offsets; realtime uses 48-frame
    scheduling.
 6. `core/output` writes PCM16 WAV, LAME MP3, or Vorbis Ogg transactionally and
-   applies metadata.
+   applies metadata, including the cover art as an ID3v2 APIC frame or a Xiph
+   METADATA_BLOCK_PICTURE.
 
 OJN chart parsing is deliberately a two-pass timeline operation. It first
 validates the declared package/count boundaries and collects raw channel-0

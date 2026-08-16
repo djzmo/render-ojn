@@ -45,7 +45,26 @@ struct OrdinaryOjnSpec {
     std::array<OjnChartCounts, 3> counts{};
     std::array<std::uint32_t, 3> durations{{1, 1, 1}};
     std::vector<OjnEventSet> hard_packages;
+    // Header text is written byte for byte, so a CP949 title is spelled as its
+    // CP949 bytes here.
+    std::string title{"Synthetic Title"};
+    std::string artist{"Synthetic Artist"};
+    std::string charter{"Fixture"};
+    std::string package_name{"synthetic.ojm"};
+    // Cover art trails the last chart section: JPEG first, then BMP.
+    std::vector<std::uint8_t> jpeg_cover;
+    std::vector<std::uint8_t> bmp_cover;
 };
+
+// A structurally valid JFIF stub: SOI, APP0 "JFIF", EOI.  Enough for a
+// signature check and to be embedded and read back byte for byte.
+inline std::vector<std::uint8_t> tiny_jpeg() {
+    return {0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xD9};
+}
+
+inline std::vector<std::uint8_t> tiny_bmp() {
+    return {'B', 'M', 0x1A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1A, 0x00, 0x00, 0x00, 0x0C, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x18, 0x00};
+}
 
 inline std::array<std::uint8_t, 4> ojn_record(std::uint16_t value, std::uint8_t volume = 0, std::uint8_t type = 0) {
     return {{static_cast<std::uint8_t>(value), static_cast<std::uint8_t>(value >> 8U), volume, type}};
@@ -122,9 +141,9 @@ inline std::shared_ptr<const io::ByteBuffer> ordinary_ojn(const OrdinaryOjnSpec&
     for (const auto& counts : spec.counts) u32(bytes, counts.note_count);
     for (const auto& counts : spec.counts) u32(bytes, counts.measure_count);
     for (const auto& counts : spec.counts) u32(bytes, counts.package_count);
-    u16(bytes, 0); u16(bytes, 0); fixed(bytes, "", 20); u32(bytes, 0); f32(bytes, 1.0F);
-    fixed(bytes, "Synthetic Title", 64); fixed(bytes, "Synthetic Artist", 32); fixed(bytes, "Fixture", 32); fixed(bytes, "synthetic.ojm", 32);
-    u32(bytes, 0); for (const auto duration : spec.durations) u32(bytes, duration);
+    u16(bytes, 0); u16(bytes, 0); fixed(bytes, "", 20); u32(bytes, static_cast<std::uint32_t>(spec.bmp_cover.size())); f32(bytes, 1.0F);
+    fixed(bytes, spec.title, 64); fixed(bytes, spec.artist, 32); fixed(bytes, spec.charter, 32); fixed(bytes, spec.package_name, 32);
+    u32(bytes, static_cast<std::uint32_t>(spec.jpeg_cover.size())); for (const auto duration : spec.durations) u32(bytes, duration);
     u32(bytes, 300); u32(bytes, 300); u32(bytes, 300);
     const auto chart_end_offset = [&]() {
         std::size_t size = 300;
@@ -137,6 +156,8 @@ inline std::shared_ptr<const io::ByteBuffer> ordinary_ojn(const OrdinaryOjnSpec&
         u32(bytes, package.measure); u16(bytes, package.channel); u16(bytes, package.slot_count);
         for (const auto& record : package.records) bytes.insert(bytes.end(), record.begin(), record.end());
     }
+    bytes.insert(bytes.end(), spec.jpeg_cover.begin(), spec.jpeg_cover.end());
+    bytes.insert(bytes.end(), spec.bmp_cover.begin(), spec.bmp_cover.end());
     return std::make_shared<io::ByteBuffer>(std::move(bytes));
 }
 

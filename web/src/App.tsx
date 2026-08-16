@@ -31,6 +31,8 @@ export default function App() {
             onQualityChange={queue.setQuality}
             tracks={queue.tracks}
             onTracksChange={queue.setTracks}
+            renderMode={queue.renderMode}
+            onRenderModeChange={queue.setRenderMode}
             rejected={queue.rejected}
             onDismissRejected={queue.dismissRejected}
             onFiles={queue.addFiles}

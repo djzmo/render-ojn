@@ -16,10 +16,12 @@ import wasmUrl from "@/wasm/renderojn.wasm?url"
 
 import {
   FORMAT_VALUES,
+  RENDER_MODE_VALUES,
   TRACKS_VALUES,
   type Difficulty,
   type OutputFormat,
   type Quality,
+  type RenderMode,
   type Tracks,
 } from "@/lib/renderojn"
 
@@ -32,6 +34,7 @@ interface EmscriptenModule {
     format: number,
     quality: number,
     tracks: number,
+    renderMode: number,
     onProgress: ((fraction: number) => void) | undefined
   ): RawRenderResult
   getExceptionMessage?(pointer: number): string[]
@@ -78,6 +81,7 @@ export type WorkerRequest =
       format: OutputFormat
       quality: Quality
       tracks: Tracks
+      renderMode: RenderMode
     }
 
 export type WorkerResponse =
@@ -166,6 +170,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       FORMAT_VALUES[request.format],
       request.quality,
       TRACKS_VALUES[request.tracks],
+      RENDER_MODE_VALUES[request.renderMode],
       (fraction) => post({ id: request.id, kind: "progress", fraction })
     )
 

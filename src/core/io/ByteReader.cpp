@@ -1,4 +1,5 @@
 #include "core/io/ByteReader.hpp"
+#include "core/io/Path.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -74,7 +75,7 @@ std::vector<std::uint8_t> ByteReader::take(std::size_t size, const char* field) 
     return {begin, begin + static_cast<std::ptrdiff_t>(size)};
 }
 
-std::string ByteReader::latin1_fixed(std::size_t size, const char* field) {
+std::string ByteReader::raw_fixed(std::size_t size, const char* field) {
     auto value = take(size, field);
     const auto terminator = std::find(value.begin(), value.end(), std::uint8_t{0});
     std::string result;
@@ -92,22 +93,23 @@ void ByteReader::seek(std::size_t position, const char* field) {
     position_ = position;
 }
 
-std::shared_ptr<const ByteBuffer> read_file(const std::string& path, std::uint64_t maximum_bytes, const char* kind) {
+std::shared_ptr<const ByteBuffer> read_file(const std::filesystem::path& path, std::uint64_t maximum_bytes, const char* kind) {
     std::error_code error;
+    const auto shown = path_to_utf8(path);
     const auto size = std::filesystem::file_size(path, error);
     if (error) {
-        throw Error(ExitCode::Runtime, std::string("Unable to read ") + kind + ": " + path);
+        throw Error(ExitCode::Runtime, std::string("Unable to read ") + kind + ": " + shown);
     }
     if (size > maximum_bytes || size > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
         throw Error(ExitCode::Runtime, std::string(kind) + " exceeds the 2 GiB input limit");
     }
     std::ifstream file(path, std::ios::binary);
     if (!file) {
-        throw Error(ExitCode::Runtime, std::string("Unable to open ") + kind + ": " + path);
+        throw Error(ExitCode::Runtime, std::string("Unable to open ") + kind + ": " + shown);
     }
     std::vector<std::uint8_t> bytes(static_cast<std::size_t>(size));
     if (!bytes.empty() && !file.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()))) {
-        throw Error(ExitCode::Runtime, std::string("Unable to read ") + kind + ": " + path);
+        throw Error(ExitCode::Runtime, std::string("Unable to read ") + kind + ": " + shown);
     }
     return std::make_shared<ByteBuffer>(std::move(bytes));
 }
