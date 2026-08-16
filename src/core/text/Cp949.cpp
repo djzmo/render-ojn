@@ -98,6 +98,15 @@ std::string decode_cp949(std::string_view bytes, bool* lossy) {
     return out;
 }
 
+std::string decode_latin1(std::string_view bytes) {
+    std::string out;
+    out.reserve(bytes.size());
+    for (const auto byte : bytes) {
+        append_utf8(out, static_cast<char32_t>(static_cast<std::uint8_t>(byte)));
+    }
+    return out;
+}
+
 std::string decode_ojn_text(std::string_view bytes) {
     bool ascii = true;
     for (const auto byte : bytes) {
@@ -108,15 +117,22 @@ std::string decode_ojn_text(std::string_view bytes) {
     }
     if (ascii) return std::string(bytes);
 
+    // Real UTF-8 Korean/kana/kanji always carries a 3- or 4-byte sequence, so a
+    // valid-and-wide UTF-8 string is taken as-is before CP949 is even tried.
     const auto utf8 = check_utf8(bytes);
+    if (utf8.valid && utf8.has_wide_sequence) return std::string(bytes);
+
+    // CP949 is what the game wrote, so a clean CP949 decode wins next -- this is
+    // where an ambiguous 2-byte-only string (valid as both encodings) lands.
     bool lossy = false;
     auto decoded = decode_cp949(bytes, &lossy);
-    const bool cp949_ok = !lossy;
+    if (!lossy) return decoded;
 
-    if (utf8.valid && !cp949_ok) return std::string(bytes);
-    if (!utf8.valid && cp949_ok) return decoded;
-    if (utf8.valid && cp949_ok) return utf8.has_wide_sequence ? std::string(bytes) : decoded;
-    return decoded;
+    // Neither a wide UTF-8 string nor clean CP949: keep whatever valid UTF-8 we
+    // were handed, otherwise widen as Latin-1.  Latin-1 is byte-preserving and
+    // matches RenderOJN <= 1.0.2, so a Western title never becomes U+FFFD.
+    if (utf8.valid) return std::string(bytes);
+    return decode_latin1(bytes);
 }
 
 } // namespace renderojn::text

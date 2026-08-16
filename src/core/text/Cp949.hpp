@@ -35,18 +35,29 @@ struct Utf8Check {
 // Decodes CP949 to UTF-8.  Undecodable bytes become U+FFFD and set *lossy.
 [[nodiscard]] std::string decode_cp949(std::string_view bytes, bool* lossy = nullptr);
 
-// The policy for OJN header fields:
+// Widens each byte to the same-numbered code point (ISO-8859-1) and emits UTF-8.
+// This never loses information: every byte 0x00-0xFF maps to exactly one code
+// point, so it is the safe fallback for text that is neither valid UTF-8 nor
+// cleanly decodable as CP949.
+[[nodiscard]] std::string decode_latin1(std::string_view bytes);
+
+// The policy for OJN header fields, in order:
 //   - pure ASCII is returned unchanged;
-//   - text that is valid UTF-8 but not valid CP949 is already UTF-8;
-//   - text that is valid CP949 but not UTF-8 is decoded;
-//   - text valid as both is taken as UTF-8 only when it contains a 3- or 4-byte
-//     sequence -- real UTF-8 Korean, kana or kanji always does, whereas CP949
-//     can only masquerade as UTF-8 through 2-byte pairs (e.g. C4 A1, which is
-//     "치" in CP949 and "ġ" in UTF-8) -- otherwise as CP949, the format's
-//     native encoding;
-//   - text valid as neither is decoded lossily as CP949.
-// This is a heuristic; it is right for every chart in the corpus and errs
-// toward the encoding the game itself wrote.
+//   - valid UTF-8 with a 3- or 4-byte sequence is already UTF-8 (real UTF-8
+//     Korean, kana or kanji always has one) -- this wins over a coincidental
+//     CP949 reading;
+//   - otherwise, if the bytes decode cleanly as CP949, that decoding is used --
+//     CP949 is the encoding the game wrote, so a 2-byte-only string that is
+//     valid as both (e.g. C4 A1, "치" in CP949 and "ġ" in UTF-8) is read as
+//     CP949;
+//   - otherwise the bytes are widened as Latin-1, which is byte-preserving and
+//     matches how RenderOJN <= 1.0.2 tagged Western titles; this catches
+//     CP1252/ISO-8859-1 titles ("Café", "Für Elise") that CP949 cannot decode
+//     without loss.
+// This is a heuristic: it cannot tell a 2-byte-only UTF-8 title from a CP949
+// one, and it reads other legacy CJK encodings (Shift_JIS, GBK, Big5) as CP949.
+// It is right for every chart in the corpus and errs toward the game's own
+// encoding, never toward U+FFFD.
 [[nodiscard]] std::string decode_ojn_text(std::string_view bytes);
 
 } // namespace renderojn::text
