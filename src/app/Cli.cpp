@@ -123,15 +123,33 @@ std::string format_extension(OutputFormat format) {
 }
 
 // Windows treats these names (with or without an extension, any case) as
-// devices, so a file cannot be created with one.
-bool is_reserved_device_name(const std::string& stem) {
-    static const std::array<const char*, 22> kReserved{
-        {"CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
-         "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"}};
+// devices, so a file cannot be created with one -- and Windows reserves the
+// name even when an extension follows it (NUL.txt is still the NUL device), so
+// only the part before the first dot is compared.  The superscript-digit COM/LPT
+// forms are documented as reserved too; they are the UTF-8 bytes for U+00B9,
+// U+00B2, U+00B3 (see Microsoft's file-naming rules).
+bool is_reserved_device_name(const std::string& name) {
+    static const std::array<const char*, 8> kBare{{"CON", "PRN", "AUX", "NUL", "COM", "LPT", "CONIN$", "CONOUT$"}};
+    // The device name is what precedes the first dot.
+    auto stem = name.substr(0, name.find('.'));
     std::string upper;
     upper.reserve(stem.size());
     for (const auto character : stem) upper.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(character))));
-    return std::any_of(kReserved.begin(), kReserved.end(), [&](const char* name) { return upper == name; });
+
+    // CON / PRN / AUX / NUL / CONIN$ / CONOUT$ match exactly; COM and LPT match
+    // when followed by a single 0-9 or one of the superscript digits.
+    for (const auto* bare : kBare) {
+        const std::string device = bare;
+        if (upper == device) return true;
+        if ((device == "COM" || device == "LPT") && upper.size() > device.size() &&
+            upper.compare(0, device.size(), device) == 0) {
+            const auto tail = upper.substr(device.size());
+            const bool ascii_digit = tail.size() == 1 && tail[0] >= '0' && tail[0] <= '9';
+            const bool superscript = tail == "\xC2\xB9" || tail == "\xC2\xB2" || tail == "\xC2\xB3";  // U+00B9/B2/B3
+            if (ascii_digit || superscript) return true;
+        }
+    }
+    return false;
 }
 
 } // namespace
@@ -234,21 +252,11 @@ std::vector<std::filesystem::path> collect_batch_inputs(const std::filesystem::p
     return inputs;
 }
 
-namespace {
-
-std::string ascii_lower(std::string text) {
-    std::transform(text.begin(), text.end(), text.begin(),
-                   [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
-    return text;
-}
-
-} // namespace
-
-std::filesystem::path reserve_unique_destination(ReservedPaths& reserved, const std::filesystem::path& destination,
-                                                 Diagnostics& diagnostics) {
-    // Case-insensitive so a collision on NTFS/APFS (where "Song.mp3" and
-    // "song.mp3" are one file) is caught, not only exact duplicates.
-    if (reserved.insert(ascii_lower(io::path_to_utf8(destination))).second) return destination;
+std::filesystem::path next_available_destination(const ReservedPaths& reserved, const std::filesystem::path& destination) {
+    // filesystem_collision_key folds case the way the target filesystem does, so
+    // a collision on NTFS/APFS (where "Song.mp3" and "song.mp3" -- or "Élan" and
+    // "élan" -- are one file) is caught, not only byte-exact duplicates.
+    if (reserved.find(io::filesystem_collision_key(destination)) == reserved.end()) return destination;
 
     const auto directory = destination.parent_path();
     const auto stem = destination.stem();
@@ -258,12 +266,23 @@ std::filesystem::path reserve_unique_destination(ReservedPaths& reserved, const 
         candidate_name += " (" + std::to_string(suffix) + ")";
         candidate_name += extension;
         const auto candidate = directory / candidate_name;
-        if (reserved.insert(ascii_lower(io::path_to_utf8(candidate))).second) {
-            diagnostics.warn("output name '" + io::path_to_utf8(destination.filename()) + "' is already taken; wrote '" +
-                             io::path_to_utf8(candidate.filename()) + "' instead");
-            return candidate;
-        }
+        if (reserved.find(io::filesystem_collision_key(candidate)) == reserved.end()) return candidate;
     }
+}
+
+void claim_destination(ReservedPaths& reserved, const std::filesystem::path& destination) {
+    reserved.insert(io::filesystem_collision_key(destination));
+}
+
+std::filesystem::path reserve_unique_destination(ReservedPaths& reserved, const std::filesystem::path& destination,
+                                                 Diagnostics& diagnostics) {
+    const auto chosen = next_available_destination(reserved, destination);
+    claim_destination(reserved, chosen);
+    if (chosen != destination) {
+        diagnostics.warn("output name '" + io::path_to_utf8(destination.filename()) + "' is already taken; wrote '" +
+                         io::path_to_utf8(chosen.filename()) + "' instead");
+    }
+    return chosen;
 }
 
 std::string banner() {

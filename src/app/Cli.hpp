@@ -69,11 +69,21 @@ void validate_output_options(const Options& options, bool input_is_directory);
 // case-insensitively so a collision on a case-insensitive filesystem is caught.
 using ReservedPaths = std::set<std::string>;
 
-// Records `destination` in `reserved`; if the name is already taken, appends
-// " (2)", " (3)", ... before the extension until it is free, warns, and returns
-// the free name.  This keeps two charts that resolve to the same output (same
-// title under --title-as-filename, or case-only differences) from overwriting
-// one another in batch mode.
+// The first name at or after `destination` not already in `reserved`, appending
+// " (2)", " (3)", ... before the extension.  Does not record anything -- so a
+// render that then fails does not consume the name.
+[[nodiscard]] std::filesystem::path next_available_destination(const ReservedPaths& reserved,
+                                                               const std::filesystem::path& destination);
+
+// Records that `destination` has been produced, so a later chart resolving to
+// the same name is disambiguated away from it.  Call only after the render
+// actually succeeds.
+void claim_destination(ReservedPaths& reserved, const std::filesystem::path& destination);
+
+// Convenience for the single-file/unit case: next_available_destination +
+// claim_destination in one call, warning when it had to disambiguate.  The batch
+// driver instead peeks with next_available_destination and claims only on a
+// successful render, so a failed chart never reserves its name.
 [[nodiscard]] std::filesystem::path reserve_unique_destination(ReservedPaths& reserved,
                                                                const std::filesystem::path& destination,
                                                                Diagnostics& diagnostics);

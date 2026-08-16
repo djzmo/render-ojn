@@ -38,4 +38,12 @@ namespace renderojn::io {
     }
 }
 
+// A key for deciding whether two paths would be the same file.  On a
+// case-insensitive filesystem (NTFS, APFS) it folds case exactly the way that
+// filesystem does -- via the OS upcase table on Windows, so "Élan" and
+// "élan" collide as they would on disk -- and on case-sensitive systems
+// (typical Linux) it stays byte-exact, because there two such names really are
+// different files.  Two paths collide iff their keys are equal.
+[[nodiscard]] std::string filesystem_collision_key(const std::filesystem::path& path);
+
 } // namespace renderojn::io

@@ -293,13 +293,23 @@ TEST_CASE("filename sanitizer replaces what no filesystem accepts and trims the 
     CHECK(renderojn::app::sanitize_filename("...").empty());
     CHECK(renderojn::app::sanitize_filename("").empty());
     CHECK(renderojn::app::sanitize_filename("EVA-\xE6\xAE\x8B\xE9\x85\xB7") == "EVA-\xE6\xAE\x8B\xE9\x85\xB7");
-    // Windows device names cannot be filenames even with an extension appended.
+    // Windows device names cannot be filenames -- even when a dot and extension
+    // follow, so the name before the first dot is what matters.
     CHECK(renderojn::app::sanitize_filename("NUL") == "_NUL");
     CHECK(renderojn::app::sanitize_filename("con") == "_con");
     CHECK(renderojn::app::sanitize_filename("COM1") == "_COM1");
     CHECK(renderojn::app::sanitize_filename("Aux") == "_Aux");
-    // A name that merely contains a device word is fine.
+    CHECK(renderojn::app::sanitize_filename("NUL.txt") == "_NUL.txt");
+    CHECK(renderojn::app::sanitize_filename("con.mp3") == "_con.mp3");
+    CHECK(renderojn::app::sanitize_filename("LPT9.something") == "_LPT9.something");
+    // COM0/LPT0 are reserved too, and the superscript-digit forms (U+00B9/B2/B3).
+    CHECK(renderojn::app::sanitize_filename("COM0") == "_COM0");
+    CHECK(renderojn::app::sanitize_filename("COM\xC2\xB9") == "_COM\xC2\xB9");
+    // A name that merely contains a device word, or has more than the device
+    // plus one digit, is fine.
     CHECK(renderojn::app::sanitize_filename("NULL Song") == "NULL Song");
+    CHECK(renderojn::app::sanitize_filename("COM10") == "COM10");
+    CHECK(renderojn::app::sanitize_filename("Nostatic") == "Nostatic");
 }
 
 TEST_CASE("reserve_unique_destination disambiguates colliding batch outputs") {
@@ -313,12 +323,25 @@ TEST_CASE("reserve_unique_destination disambiguates colliding batch outputs") {
     CHECK(renderojn::app::reserve_unique_destination(reserved, first, diagnostics) == std::filesystem::path("out/Bach Alive (3).mp3"));
     REQUIRE(diagnostics.warnings().size() == 2);
     CHECK_THAT(diagnostics.warnings().front(), Catch::Matchers::ContainsSubstring("already taken"));
+#ifdef _WIN32
     // Case-only collisions are caught on case-insensitive filesystems: "bach
     // alive" clashes with the "Bach Alive", " (2)" and " (3)" already reserved,
-    // so it lands on " (4)".
+    // so it lands on " (4)".  On a case-sensitive filesystem it is a new name.
     renderojn::Diagnostics second_diag;
     CHECK(renderojn::app::reserve_unique_destination(reserved, "out/bach alive.mp3", second_diag).filename() ==
           std::filesystem::path("bach alive (4).mp3"));
+#endif
+}
+
+TEST_CASE("peeking a destination does not reserve it, so a failed render frees its name") {
+    renderojn::app::ReservedPaths reserved;
+    const std::filesystem::path first = "out/Nostatic_background.mp3";
+    // A batch peeks the name, and if the render fails it never claims it.
+    CHECK(renderojn::app::next_available_destination(reserved, first) == first);
+    CHECK(renderojn::app::next_available_destination(reserved, first) == first);  // still free
+    // Once a render succeeds the name is claimed, and the next chart is pushed on.
+    renderojn::app::claim_destination(reserved, first);
+    CHECK(renderojn::app::next_available_destination(reserved, first) == std::filesystem::path("out/Nostatic_background (2).mp3"));
 }
 
 TEST_CASE("batch input collection takes only top-level .ojn files, sorted") {

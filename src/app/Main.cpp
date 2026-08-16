@@ -82,8 +82,16 @@ std::filesystem::path render_one(const renderojn::app::Options& options, const s
     const auto& header = chart.header;
     // The output name may come from the header, so it resolves only now.
     auto destination = options.play ? std::filesystem::path{} : renderojn::app::resolve_output_path(options, input, header.title);
+    // In batch mode, disambiguate against names already produced, but claim the
+    // name only after the render below succeeds -- a chart that fails (e.g. a
+    // missing OJM) must not reserve a name and push the next chart to " (2)".
     if (!options.play && reserved != nullptr) {
-        destination = renderojn::app::reserve_unique_destination(*reserved, destination, diagnostics);
+        const auto chosen = renderojn::app::next_available_destination(*reserved, destination);
+        if (chosen != destination) {
+            diagnostics.warn("output name '" + renderojn::io::path_to_utf8(destination.filename()) + "' is already taken; wrote '" +
+                             renderojn::io::path_to_utf8(chosen.filename()) + "' instead");
+        }
+        destination = chosen;
     }
 
     const auto package_path = resolve_sample_package(options, input, header, diagnostics);
@@ -117,6 +125,8 @@ std::filesystem::path render_one(const renderojn::app::Options& options, const s
                                                    renderojn::render::mix_chart(compatible_chart, samples, mode, mode == renderojn::render::SchedulingMode::Realtime,
                                                                                 consumer, diagnostics, options.tracks);
                                                });
+    // The file is on disk now, so claim its name against later charts.
+    if (reserved != nullptr) renderojn::app::claim_destination(*reserved, destination);
     return destination;
 }
 
