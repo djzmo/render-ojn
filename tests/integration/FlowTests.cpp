@@ -406,11 +406,16 @@ TEST_CASE("every encoder publishes to a destination whose name is outside the AN
     cases.push_back({renderojn::output::Format::Mp3, ".mp3"});
     cases.push_back({renderojn::output::Format::Ogg, ".ogg"});
 #endif
+    // Its own subdirectory, so the leftover-temporary scan below sees only this
+    // test's files -- not another concurrent test process's in-flight temps, nor
+    // an unrelated %TEMP% entry with an un-decodable name.
+    const auto workdir = std::filesystem::temp_directory_path() / "renderojn-unicode-out";
+    std::error_code ignored;
+    std::filesystem::remove_all(workdir, ignored);
+    std::filesystem::create_directories(workdir);
     for (const auto& item : cases) {
-        // "renderojn-한글" + extension, as UTF-8 escapes.
-        const auto destination = std::filesystem::temp_directory_path() /
-                                 renderojn::io::utf8_to_path(std::string("renderojn-\xED\x95\x9C\xEA\xB8\x80") + item.extension);
-        std::error_code ignored;
+        // "renderojn-" + hangul + extension, as UTF-8 escapes.
+        const auto destination = workdir / renderojn::io::utf8_to_path(std::string("renderojn-\xED\x95\x9C\xEA\xB8\x80") + item.extension);
         std::filesystem::remove(destination, ignored);
 
         renderojn::output::encode_transactionally(item.format, destination, kFrames, 3, sample_tags(),
@@ -425,18 +430,17 @@ TEST_CASE("every encoder publishes to a destination whose name is outside the AN
         }
 #endif
         std::filesystem::remove(destination, ignored);
-        // No temporary may be left behind beside it.
-        for (const auto& entry : std::filesystem::directory_iterator(std::filesystem::temp_directory_path())) {
-            const auto name = renderojn::io::path_to_utf8(entry.path().filename());
-            CHECK(name.find("renderojn-\xED\x95\x9C\xEA\xB8\x80") == std::string::npos);
-        }
     }
+    // Only the published files were created here, so once they are removed the
+    // directory is empty: no transactional temporary was left behind.
+    CHECK(std::filesystem::is_empty(workdir));
+    std::filesystem::remove_all(workdir, ignored);
 }
 
 #ifdef RENDEROJN_EXTERNAL_DEPS
 TEST_CASE("non-Latin tags survive MP3 and Ogg on both the file and buffer paths") {
     constexpr std::size_t kFrames = 4800;
-    // 유령의 축제 / 한글 as UTF-8, the form the parser now hands the encoder.
+    // Korean title/artist as UTF-8, the form the parser now hands the encoder.
     const std::string title = "\xEC\x9C\xA0\xEB\xA0\xB9\xEC\x9D\x98\x20\xEC\xB6\x95\xEC\xA0\x9C" "2(Sneak)";
     const std::string artist = "\xED\x95\x9C\xEA\xB8\x80";
     auto tags = sample_tags();
@@ -471,6 +475,8 @@ TEST_CASE("non-Latin tags survive MP3 and Ogg on both the file and buffer paths"
             auto* text = dynamic_cast<TagLib::ID3v2::TextIdentificationFrame*>(frames.front());
             REQUIRE(text != nullptr);
             CHECK(text->textEncoding() == TagLib::String::UTF8);
+            // No ID3v1 mirror: it has no UTF-8 and would carry a blank title.
+            CHECK_FALSE(mpeg->hasID3v1Tag());
         }
         std::filesystem::remove(destination, ignored);
 

@@ -264,18 +264,25 @@ TEST_CASE("CLI --title-as-filename uses the sanitized chart title, falling back 
     // Without the flag the title is ignored.
     CHECK(resolve(renderojn::app::parse_cli({"o2ma100.ojn"}), "Bach Alive").filename() == "o2ma100.mp3");
     // A UTF-8 title survives untouched.
-    const std::string korean = "\xEC\x9C\xA0\xEB\xA0\xB9";  // 유령
+    const std::string korean = "\xEC\x9C\xA0\xEB\xA0\xB9";  // "ghost", U+C720 U+B839
     CHECK(renderojn::io::path_to_utf8(resolve(renderojn::app::parse_cli({"o2ma100.ojn", "--title-as-filename"}), korean).filename()) == korean + ".mp3");
 }
 
-TEST_CASE("CLI --outdir redirects the default name and rejects --outfile beside it") {
+TEST_CASE("CLI --outdir redirects the default name and validate_output_options rejects bad combinations") {
     const auto redirected = renderojn::app::parse_cli({"charts/song.ojn", "--outdir", "out"});
     CHECK(resolve(redirected) == std::filesystem::path("out") / "song.mp3");
     CHECK_THROWS_AS(renderojn::app::validate_output_options(renderojn::app::parse_cli({"song.ojn", "--outdir", "out", "--outfile", "x.mp3"}), false), renderojn::Error);
     CHECK_THROWS_AS(renderojn::app::validate_output_options(renderojn::app::parse_cli({"charts", "--outfile", "x.mp3"}), true), renderojn::Error);
     CHECK_THROWS_AS(renderojn::app::validate_output_options(renderojn::app::parse_cli({"charts", "--play"}), true), renderojn::Error);
+    // A folder input must not take one shared --sample-package for every chart.
+    CHECK_THROWS_WITH(renderojn::app::validate_output_options(renderojn::app::parse_cli({"charts", "--sample-package", "x.ojm"}), true),
+                      Catch::Matchers::ContainsSubstring("--sample-package cannot be used with a folder input"));
+    // The --outfile/--format extension conflict is a pre-I/O usage error now.
+    CHECK_THROWS_WITH(renderojn::app::validate_output_options(renderojn::app::parse_cli({"song.ojn", "--format", "wav", "--outfile", "mix.mp3"}), false),
+                      Catch::Matchers::ContainsSubstring("--outfile extension conflicts with --format"));
     CHECK_NOTHROW(renderojn::app::validate_output_options(renderojn::app::parse_cli({"charts", "--outdir", "out"}), true));
     CHECK_NOTHROW(renderojn::app::validate_output_options(renderojn::app::parse_cli({"song.ojn", "--outfile", "x.mp3"}), false));
+    CHECK_NOTHROW(renderojn::app::validate_output_options(renderojn::app::parse_cli({"song.ojn", "--sample-package", "x.ojm"}), false));
 }
 
 TEST_CASE("filename sanitizer replaces what no filesystem accepts and trims the ends") {
@@ -286,6 +293,32 @@ TEST_CASE("filename sanitizer replaces what no filesystem accepts and trims the 
     CHECK(renderojn::app::sanitize_filename("...").empty());
     CHECK(renderojn::app::sanitize_filename("").empty());
     CHECK(renderojn::app::sanitize_filename("EVA-\xE6\xAE\x8B\xE9\x85\xB7") == "EVA-\xE6\xAE\x8B\xE9\x85\xB7");
+    // Windows device names cannot be filenames even with an extension appended.
+    CHECK(renderojn::app::sanitize_filename("NUL") == "_NUL");
+    CHECK(renderojn::app::sanitize_filename("con") == "_con");
+    CHECK(renderojn::app::sanitize_filename("COM1") == "_COM1");
+    CHECK(renderojn::app::sanitize_filename("Aux") == "_Aux");
+    // A name that merely contains a device word is fine.
+    CHECK(renderojn::app::sanitize_filename("NULL Song") == "NULL Song");
+}
+
+TEST_CASE("reserve_unique_destination disambiguates colliding batch outputs") {
+    renderojn::app::ReservedPaths reserved;
+    renderojn::Diagnostics diagnostics;
+    const std::filesystem::path first = "out/Bach Alive.mp3";
+    CHECK(renderojn::app::reserve_unique_destination(reserved, first, diagnostics) == first);
+    CHECK(diagnostics.warnings().empty());
+    // A second chart resolving to the same name gets " (2)" and warns.
+    CHECK(renderojn::app::reserve_unique_destination(reserved, first, diagnostics) == std::filesystem::path("out/Bach Alive (2).mp3"));
+    CHECK(renderojn::app::reserve_unique_destination(reserved, first, diagnostics) == std::filesystem::path("out/Bach Alive (3).mp3"));
+    REQUIRE(diagnostics.warnings().size() == 2);
+    CHECK_THAT(diagnostics.warnings().front(), Catch::Matchers::ContainsSubstring("already taken"));
+    // Case-only collisions are caught on case-insensitive filesystems: "bach
+    // alive" clashes with the "Bach Alive", " (2)" and " (3)" already reserved,
+    // so it lands on " (4)".
+    renderojn::Diagnostics second_diag;
+    CHECK(renderojn::app::reserve_unique_destination(reserved, "out/bach alive.mp3", second_diag).filename() ==
+          std::filesystem::path("bach alive (4).mp3"));
 }
 
 TEST_CASE("batch input collection takes only top-level .ojn files, sorted") {
@@ -304,7 +337,7 @@ TEST_CASE("batch input collection takes only top-level .ojn files, sorted") {
 }
 
 TEST_CASE("UTF-8 path helpers round-trip text outside the ANSI code page") {
-    // "한글.ojn" as UTF-8 bytes; kept as escapes so the source stays ASCII.
+    // "hangul.ojn" as UTF-8 bytes; kept as escapes so the source stays ASCII.
     const std::string utf8 = "\xED\x95\x9C\xEA\xB8\x80.ojn";
     const auto path = renderojn::io::utf8_to_path(utf8);
     CHECK(renderojn::io::path_to_utf8(path) == utf8);
@@ -315,8 +348,8 @@ TEST_CASE("UTF-8 path helpers round-trip text outside the ANSI code page") {
 }
 
 TEST_CASE("CLI accepts non-ASCII input and output paths verbatim") {
-    const std::string input = "\xEC\x9C\xA0\xEB\xA0\xB9.ojn";      // 유령.ojn
-    const std::string output = "\xEC\xB6\x95\xEC\xA0\x9C.mp3";     // 축제.mp3
+    const std::string input = "\xEC\x9C\xA0\xEB\xA0\xB9.ojn";      // "ghost".ojn
+    const std::string output = "\xEC\xB6\x95\xEC\xA0\x9C.mp3";     // "festival".mp3
     const auto options = renderojn::app::parse_cli({input, "--outfile", output});
     CHECK(renderojn::io::path_to_utf8(options.input) == input);
     REQUIRE(options.output.has_value());
@@ -349,8 +382,8 @@ TEST_CASE("ordinary OJN header and tuple are parsed from one immutable buffer") 
 
 TEST_CASE("OJN header text is decoded from CP949 to UTF-8") {
     renderojn::test_fixture::OrdinaryOjnSpec spec;
-    spec.title = "\xC7\xD1\xB1\xDB";                 // 한글 in CP949
-    spec.artist = "\xC0\xAF\xB7\xC9\xC0\xC7\x20\xC3\xE0\xC1\xA6" "2(Sneak)";   // 유령의 축제2(Sneak) in CP949
+    spec.title = "\xC7\xD1\xB1\xDB";                 // "hangul" in CP949
+    spec.artist = "\xC0\xAF\xB7\xC9\xC0\xC7\x20\xC3\xE0\xC1\xA6" "2(Sneak)";   // reporter title in CP949
     spec.charter = "Plain ASCII";
     const auto chart = renderojn::format::parse_ojn_chart(renderojn::test_fixture::ordinary_ojn(spec), renderojn::format::Difficulty::Hard);
     CHECK(chart.header.title == "\xED\x95\x9C\xEA\xB8\x80");
