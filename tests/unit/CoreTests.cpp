@@ -302,9 +302,14 @@ TEST_CASE("filename sanitizer replaces what no filesystem accepts and trims the 
     CHECK(renderojn::app::sanitize_filename("NUL.txt") == "_NUL.txt");
     CHECK(renderojn::app::sanitize_filename("con.mp3") == "_con.mp3");
     CHECK(renderojn::app::sanitize_filename("LPT9.something") == "_LPT9.something");
-    // COM0/LPT0 are reserved too, and the superscript-digit forms (U+00B9/B2/B3).
-    CHECK(renderojn::app::sanitize_filename("COM0") == "_COM0");
+    // The superscript-digit COM/LPT forms (U+00B9/B2/B3) are reserved.
     CHECK(renderojn::app::sanitize_filename("COM\xC2\xB9") == "_COM\xC2\xB9");
+    // Windows reserves COM1-9/LPT1-9 only: COM0/LPT0 and bare COM/LPT are valid
+    // filenames (verified with a direct Windows probe).
+    CHECK(renderojn::app::sanitize_filename("COM0") == "COM0");
+    CHECK(renderojn::app::sanitize_filename("LPT0") == "LPT0");
+    CHECK(renderojn::app::sanitize_filename("COM") == "COM");
+    CHECK(renderojn::app::sanitize_filename("LPT") == "LPT");
     // A name that merely contains a device word, or has more than the device
     // plus one digit, is fine.
     CHECK(renderojn::app::sanitize_filename("NULL Song") == "NULL Song");
@@ -312,36 +317,41 @@ TEST_CASE("filename sanitizer replaces what no filesystem accepts and trims the 
     CHECK(renderojn::app::sanitize_filename("Nostatic") == "Nostatic");
 }
 
-TEST_CASE("reserve_unique_destination disambiguates colliding batch outputs") {
-    renderojn::app::ReservedPaths reserved;
-    renderojn::Diagnostics diagnostics;
-    const std::filesystem::path first = "out/Bach Alive.mp3";
-    CHECK(renderojn::app::reserve_unique_destination(reserved, first, diagnostics) == first);
-    CHECK(diagnostics.warnings().empty());
-    // A second chart resolving to the same name gets " (2)" and warns.
-    CHECK(renderojn::app::reserve_unique_destination(reserved, first, diagnostics) == std::filesystem::path("out/Bach Alive (2).mp3"));
-    CHECK(renderojn::app::reserve_unique_destination(reserved, first, diagnostics) == std::filesystem::path("out/Bach Alive (3).mp3"));
-    REQUIRE(diagnostics.warnings().size() == 2);
-    CHECK_THAT(diagnostics.warnings().front(), Catch::Matchers::ContainsSubstring("already taken"));
-#ifdef _WIN32
-    // Case-only collisions are caught on case-insensitive filesystems: "bach
-    // alive" clashes with the "Bach Alive", " (2)" and " (3)" already reserved,
-    // so it lands on " (4)".  On a case-sensitive filesystem it is a new name.
-    renderojn::Diagnostics second_diag;
-    CHECK(renderojn::app::reserve_unique_destination(reserved, "out/bach alive.mp3", second_diag).filename() ==
-          std::filesystem::path("bach alive (4).mp3"));
-#endif
-}
+TEST_CASE("next_available_destination disambiguates against files already on disk") {
+    const auto dir = std::filesystem::temp_directory_path() / "renderojn-dest";
+    std::error_code ignored;
+    std::filesystem::remove_all(dir, ignored);
+    std::filesystem::create_directories(dir);
+    const auto base = dir / "Bach Alive.mp3";
 
-TEST_CASE("peeking a destination does not reserve it, so a failed render frees its name") {
-    renderojn::app::ReservedPaths reserved;
-    const std::filesystem::path first = "out/Nostatic_background.mp3";
-    // A batch peeks the name, and if the render fails it never claims it.
-    CHECK(renderojn::app::next_available_destination(reserved, first) == first);
-    CHECK(renderojn::app::next_available_destination(reserved, first) == first);  // still free
-    // Once a render succeeds the name is claimed, and the next chart is pushed on.
-    renderojn::app::claim_destination(reserved, first);
-    CHECK(renderojn::app::next_available_destination(reserved, first) == std::filesystem::path("out/Nostatic_background (2).mp3"));
+    // Nothing on disk yet: the requested name is free.
+    CHECK(renderojn::app::next_available_destination(base) == base);
+
+    // A batch renders sequentially, so an earlier success is a real file by the
+    // time the next chart resolves; create the files the way a render would.
+    std::ofstream(base, std::ios::binary) << "x";
+    CHECK(renderojn::app::next_available_destination(base) == dir / "Bach Alive (2).mp3");
+    std::ofstream(dir / "Bach Alive (2).mp3", std::ios::binary) << "x";
+    CHECK(renderojn::app::next_available_destination(base) == dir / "Bach Alive (3).mp3");
+
+    // The filesystem itself decides case-insensitivity: on a case-insensitive
+    // volume "bach alive.mp3" aliases the existing file and is pushed on; on a
+    // case-sensitive one it is a distinct new name.  Assert whichever this
+    // machine's temp volume actually does, so the test is correct either way.
+    const auto lower = dir / "bach alive.mp3";
+    const auto chosen = renderojn::app::next_available_destination(lower);
+    if (std::filesystem::exists(lower, ignored)) {
+        CHECK(chosen != lower);  // case-insensitive: aliased the existing file
+    } else {
+        CHECK(chosen == lower);  // case-sensitive: a genuinely new name
+    }
+
+    // A failed render leaves no file, so its name stays free for the next chart.
+    const auto missing = dir / "Nostatic.mp3";
+    CHECK(renderojn::app::next_available_destination(missing) == missing);
+    CHECK(renderojn::app::next_available_destination(missing) == missing);
+
+    std::filesystem::remove_all(dir, ignored);
 }
 
 TEST_CASE("batch input collection takes only top-level .ojn files, sorted") {

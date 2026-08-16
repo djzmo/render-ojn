@@ -66,12 +66,11 @@ void print_warnings(const renderojn::Diagnostics& diagnostics, const char* inden
 // Renders (or plays) one chart end to end and returns the published path --
 // empty under --play.  Everything that decides how a chart sounds lives in the
 // shared core; this only sequences it, exactly as src/wasm/Bindings.cpp does.
-// `reserved`, when given, records every destination produced so far so a batch
-// run can keep two charts that resolve to the same name from overwriting each
-// other.
+// When `disambiguate` is set (batch mode), a name already on disk is renamed to
+// " (2)" etc. rather than overwritten; single-file renders keep the historical
+// overwrite-in-place behaviour.
 std::filesystem::path render_one(const renderojn::app::Options& options, const std::filesystem::path& input,
-                                 renderojn::Diagnostics& diagnostics,
-                                 renderojn::app::ReservedPaths* reserved = nullptr) {
+                                 renderojn::Diagnostics& diagnostics, bool disambiguate = false) {
     const auto ojn = renderojn::io::read_file(input, kTwoGiB, "OJN");
     // A Korea-era `new` wrapper is decrypted here once; the compat profiles hash
     // the decrypted form, as the WebAssembly build does.
@@ -82,16 +81,12 @@ std::filesystem::path render_one(const renderojn::app::Options& options, const s
     const auto& header = chart.header;
     // The output name may come from the header, so it resolves only now.
     auto destination = options.play ? std::filesystem::path{} : renderojn::app::resolve_output_path(options, input, header.title);
-    // In batch mode, disambiguate against names already produced, but claim the
-    // name only after the render below succeeds -- a chart that fails (e.g. a
-    // missing OJM) must not reserve a name and push the next chart to " (2)".
-    if (!options.play && reserved != nullptr) {
-        const auto chosen = renderojn::app::next_available_destination(*reserved, destination);
-        if (chosen != destination) {
-            diagnostics.warn("output name '" + renderojn::io::path_to_utf8(destination.filename()) + "' is already taken; wrote '" +
-                             renderojn::io::path_to_utf8(chosen.filename()) + "' instead");
-        }
-        destination = chosen;
+    // In batch mode, pick a name not already on disk, but announce the rename
+    // only after the render below succeeds -- a chart that fails (e.g. a missing
+    // OJM) must not print that it "wrote" a file that does not exist.
+    const auto requested = destination;
+    if (!options.play && disambiguate) {
+        destination = renderojn::app::next_available_destination(destination);
     }
 
     const auto package_path = resolve_sample_package(options, input, header, diagnostics);
@@ -125,8 +120,12 @@ std::filesystem::path render_one(const renderojn::app::Options& options, const s
                                                    renderojn::render::mix_chart(compatible_chart, samples, mode, mode == renderojn::render::SchedulingMode::Realtime,
                                                                                 consumer, diagnostics, options.tracks);
                                                });
-    // The file is on disk now, so claim its name against later charts.
-    if (reserved != nullptr) renderojn::app::claim_destination(*reserved, destination);
+    // The file is on disk now, so report any rename -- the numbered file is
+    // guaranteed to exist, and the next chart's fs::exists probe will see it.
+    if (destination != requested) {
+        diagnostics.warn("output name '" + renderojn::io::path_to_utf8(requested.filename()) + "' is already taken; wrote '" +
+                         renderojn::io::path_to_utf8(destination.filename()) + "' instead");
+    }
     return destination;
 }
 
@@ -142,7 +141,6 @@ int run_batch(renderojn::app::Options options, renderojn::Diagnostics& diagnosti
     fs::create_directories(*options.outdir);
     print_warnings(diagnostics);
 
-    renderojn::app::ReservedPaths reserved;
     std::size_t failed = 0;
     for (std::size_t index = 0; index < inputs.size(); ++index) {
         const auto& input = inputs[index];
@@ -150,7 +148,7 @@ int run_batch(renderojn::app::Options options, renderojn::Diagnostics& diagnosti
         std::cout << "[" << (index + 1) << "/" << inputs.size() << "] " << name << '\n';
         renderojn::Diagnostics per_file;
         try {
-            const auto destination = render_one(options, input, per_file, &reserved);
+            const auto destination = render_one(options, input, per_file, /*disambiguate=*/true);
             std::cout << "  -> " << renderojn::io::path_to_utf8(destination) << '\n';
             // Prefix per-file diagnostics with the input name so they stay
             // legible when stdout and stderr are separated (e.g. `> log.txt`).

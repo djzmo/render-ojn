@@ -129,25 +129,28 @@ std::string format_extension(OutputFormat format) {
 // forms are documented as reserved too; they are the UTF-8 bytes for U+00B9,
 // U+00B2, U+00B3 (see Microsoft's file-naming rules).
 bool is_reserved_device_name(const std::string& name) {
-    static const std::array<const char*, 8> kBare{{"CON", "PRN", "AUX", "NUL", "COM", "LPT", "CONIN$", "CONOUT$"}};
-    // The device name is what precedes the first dot.
+    // Names reserved on their own; bare COM/LPT are NOT reserved (only COMn/LPTn).
+    static const std::array<const char*, 6> kExact{{"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}};
+    static const std::array<const char*, 2> kNumbered{{"COM", "LPT"}};
+    // The device name is what precedes the first dot (NUL.txt is still NUL).
     auto stem = name.substr(0, name.find('.'));
     std::string upper;
     upper.reserve(stem.size());
     for (const auto character : stem) upper.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(character))));
 
-    // CON / PRN / AUX / NUL / CONIN$ / CONOUT$ match exactly; COM and LPT match
-    // when followed by a single 0-9 or one of the superscript digits.
-    for (const auto* bare : kBare) {
-        const std::string device = bare;
-        if (upper == device) return true;
-        if ((device == "COM" || device == "LPT") && upper.size() > device.size() &&
-            upper.compare(0, device.size(), device) == 0) {
-            const auto tail = upper.substr(device.size());
-            const bool ascii_digit = tail.size() == 1 && tail[0] >= '0' && tail[0] <= '9';
-            const bool superscript = tail == "\xC2\xB9" || tail == "\xC2\xB2" || tail == "\xC2\xB3";  // U+00B9/B2/B3
-            if (ascii_digit || superscript) return true;
-        }
+    for (const auto* exact : kExact) {
+        if (upper == exact) return true;
+    }
+    // COM/LPT are reserved only when followed by a single 1-9, or one of the
+    // superscript digits U+00B9/B2/B3 (Microsoft's rules).  COM0/LPT0 are not
+    // reserved; a Windows probe creates them fine.
+    for (const auto* prefix : kNumbered) {
+        const std::string device = prefix;
+        if (upper.size() <= device.size() || upper.compare(0, device.size(), device) != 0) continue;
+        const auto tail = upper.substr(device.size());
+        const bool ascii_digit = tail.size() == 1 && tail[0] >= '1' && tail[0] <= '9';
+        const bool superscript = tail == "\xC2\xB9" || tail == "\xC2\xB2" || tail == "\xC2\xB3";  // U+00B9/B2/B3
+        if (ascii_digit || superscript) return true;
     }
     return false;
 }
@@ -252,11 +255,13 @@ std::vector<std::filesystem::path> collect_batch_inputs(const std::filesystem::p
     return inputs;
 }
 
-std::filesystem::path next_available_destination(const ReservedPaths& reserved, const std::filesystem::path& destination) {
-    // filesystem_collision_key folds case the way the target filesystem does, so
-    // a collision on NTFS/APFS (where "Song.mp3" and "song.mp3" -- or "Élan" and
-    // "élan" -- are one file) is caught, not only byte-exact duplicates.
-    if (reserved.find(io::filesystem_collision_key(destination)) == reserved.end()) return destination;
+std::filesystem::path next_available_destination(const std::filesystem::path& destination) {
+    // fs::exists asks the filesystem, which applies its own case and Unicode
+    // rules for this volume -- so "Song.mp3"/"song.mp3", or "Élan"/"élan", alias
+    // on a case-insensitive volume and are distinct on a case-sensitive one,
+    // with no platform guesswork.
+    std::error_code error;
+    if (!std::filesystem::exists(destination, error)) return destination;
 
     const auto directory = destination.parent_path();
     const auto stem = destination.stem();
@@ -266,23 +271,8 @@ std::filesystem::path next_available_destination(const ReservedPaths& reserved, 
         candidate_name += " (" + std::to_string(suffix) + ")";
         candidate_name += extension;
         const auto candidate = directory / candidate_name;
-        if (reserved.find(io::filesystem_collision_key(candidate)) == reserved.end()) return candidate;
+        if (!std::filesystem::exists(candidate, error)) return candidate;
     }
-}
-
-void claim_destination(ReservedPaths& reserved, const std::filesystem::path& destination) {
-    reserved.insert(io::filesystem_collision_key(destination));
-}
-
-std::filesystem::path reserve_unique_destination(ReservedPaths& reserved, const std::filesystem::path& destination,
-                                                 Diagnostics& diagnostics) {
-    const auto chosen = next_available_destination(reserved, destination);
-    claim_destination(reserved, chosen);
-    if (chosen != destination) {
-        diagnostics.warn("output name '" + io::path_to_utf8(destination.filename()) + "' is already taken; wrote '" +
-                         io::path_to_utf8(chosen.filename()) + "' instead");
-    }
-    return chosen;
 }
 
 std::string banner() {

@@ -30,7 +30,6 @@ configure_file(src/app/Version.hpp.in
 set(RENDEROJN_CORE_SOURCES
     src/core/io/ByteReader.cpp
     src/core/io/File.cpp
-    src/core/io/Path.cpp
     src/core/crypto/Sha256.cpp
     src/core/compat/CompatibilityProfile.cpp
     src/core/format/OjnParser.cpp

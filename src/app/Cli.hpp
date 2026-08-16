@@ -6,7 +6,6 @@
 
 #include <filesystem>
 #include <optional>
-#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -65,28 +64,16 @@ void validate_output_options(const Options& options, bool input_is_directory);
 // folders are not searched.
 [[nodiscard]] std::vector<std::filesystem::path> collect_batch_inputs(const std::filesystem::path& directory);
 
-// The set of destinations a batch run has already claimed, compared
-// case-insensitively so a collision on a case-insensitive filesystem is caught.
-using ReservedPaths = std::set<std::string>;
-
-// The first name at or after `destination` not already in `reserved`, appending
-// " (2)", " (3)", ... before the extension.  Does not record anything -- so a
-// render that then fails does not consume the name.
-[[nodiscard]] std::filesystem::path next_available_destination(const ReservedPaths& reserved,
-                                                               const std::filesystem::path& destination);
-
-// Records that `destination` has been produced, so a later chart resolving to
-// the same name is disambiguated away from it.  Call only after the render
-// actually succeeds.
-void claim_destination(ReservedPaths& reserved, const std::filesystem::path& destination);
-
-// Convenience for the single-file/unit case: next_available_destination +
-// claim_destination in one call, warning when it had to disambiguate.  The batch
-// driver instead peeks with next_available_destination and claims only on a
-// successful render, so a failed chart never reserves its name.
-[[nodiscard]] std::filesystem::path reserve_unique_destination(ReservedPaths& reserved,
-                                                               const std::filesystem::path& destination,
-                                                               Diagnostics& diagnostics);
+// The first name at or after `destination` that does not already exist on disk,
+// appending " (2)", " (3)", ... before the extension.  Existence is the
+// filesystem's own answer -- so two names that alias on a case-insensitive
+// volume (NTFS, default APFS) collide exactly as they would on disk, and two
+// that differ on a case-sensitive volume do not.  It probes rather than
+// remembers, so a render that fails leaves the name free for the next chart,
+// and a name already taken by an earlier file (this run or a previous one) is
+// never overwritten.  Batch mode renders sequentially, so by the time a chart
+// resolves its name every earlier success is already on disk.
+[[nodiscard]] std::filesystem::path next_available_destination(const std::filesystem::path& destination);
 
 [[nodiscard]] std::string usage();
 [[nodiscard]] std::string banner();
