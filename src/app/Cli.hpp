@@ -6,6 +6,7 @@
 
 #include <filesystem>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -63,6 +64,19 @@ void validate_output_options(const Options& options, bool input_is_directory);
 // The .ojn files (any case) directly inside a folder, sorted by name; nested
 // folders are not searched.
 [[nodiscard]] std::vector<std::filesystem::path> collect_batch_inputs(const std::filesystem::path& directory);
+
+// The set of destinations a batch run has already claimed, compared
+// case-insensitively so a collision on a case-insensitive filesystem is caught.
+using ReservedPaths = std::set<std::string>;
+
+// Records `destination` in `reserved`; if the name is already taken, appends
+// " (2)", " (3)", ... before the extension until it is free, warns, and returns
+// the free name.  This keeps two charts that resolve to the same output (same
+// title under --title-as-filename, or case-only differences) from overwriting
+// one another in batch mode.
+[[nodiscard]] std::filesystem::path reserve_unique_destination(ReservedPaths& reserved,
+                                                               const std::filesystem::path& destination,
+                                                               Diagnostics& diagnostics);
 
 [[nodiscard]] std::string usage();
 [[nodiscard]] std::string banner();

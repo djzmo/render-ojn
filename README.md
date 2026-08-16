@@ -30,7 +30,11 @@ See it in action: https://www.youtube.com/watch?v=snYnd_IvmbM
 ### v1.0.3
 - Korean and Japanese titles, artists and charter names are decoded from the
   OJN's CP949 text and written to the MP3/Ogg tags as UTF-8, so they no longer
-  come out as mojibake. The web app shows and names files by the real title.
+  come out as mojibake. Western-accented (Latin-1) titles are preserved as
+  before rather than being mangled. The web app shows and names files by the
+  real title.
+- A folder input no longer lets two charts with the same title overwrite each
+  other; the second gets a ` (2)` suffix.
 - Windows builds accept non-ASCII input paths and `--outfile` names, which
   previously failed with "Unable to create temporary output".
 - Default output name is now `<input stem>.<format>` (`o2ma100.mp3`, not

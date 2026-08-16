@@ -3,6 +3,7 @@
 #include "core/io/Path.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <sstream>
 
@@ -115,12 +116,43 @@ Options parse_cli(const std::vector<std::string>& arguments) {
     return result;
 }
 
+namespace {
+
+std::string format_extension(OutputFormat format) {
+    return format == OutputFormat::Wav ? ".wav" : format == OutputFormat::Mp3 ? ".mp3" : ".ogg";
+}
+
+// Windows treats these names (with or without an extension, any case) as
+// devices, so a file cannot be created with one.
+bool is_reserved_device_name(const std::string& stem) {
+    static const std::array<const char*, 22> kReserved{
+        {"CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+         "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"}};
+    std::string upper;
+    upper.reserve(stem.size());
+    for (const auto character : stem) upper.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(character))));
+    return std::any_of(kReserved.begin(), kReserved.end(), [&](const char* name) { return upper == name; });
+}
+
+} // namespace
+
 void validate_output_options(const Options& options, bool input_is_directory) {
     if (options.output && options.outdir) {
         usage_error("--outfile and --outdir cannot be combined; --outfile names the whole path, --outdir only the folder");
     }
     if (input_is_directory && options.output) usage_error("--outfile cannot be used with a folder input; use --outdir");
+    if (input_is_directory && options.sample_package) {
+        usage_error("--sample-package cannot be used with a folder input; each chart names its own package");
+    }
     if (input_is_directory && options.play) usage_error("--play needs a single .ojn file, not a folder");
+    // The --outfile/--format extension conflict needs no I/O, so surface it here
+    // before anything is read rather than deep inside the render.
+    if (options.output && options.output->has_extension()) {
+        const auto extension = format_extension(options.output_format);
+        if (options.output->extension() != std::filesystem::path(extension)) {
+            usage_error("--outfile extension conflicts with --format (expected " + extension + ")");
+        }
+    }
 }
 
 std::string sanitize_filename(std::string_view utf8) {
@@ -140,6 +172,9 @@ std::string sanitize_filename(std::string_view utf8) {
     const auto last = result.find_last_not_of(" .");
     if (last == std::string::npos) return {};
     result.erase(last + 1);
+    // A Windows device name (CON, NUL, COM1...) cannot be a filename even with an
+    // extension appended, so prefix it out of the reserved set.
+    if (is_reserved_device_name(result)) result.insert(result.begin(), '_');
     return result;
 }
 
@@ -161,7 +196,7 @@ std::filesystem::path input_stem(const std::filesystem::path& input) {
 
 std::filesystem::path resolve_output_path(const Options& options, const std::filesystem::path& input,
                                           const std::string& title_utf8) {
-    const std::string extension = options.output_format == OutputFormat::Wav ? ".wav" : options.output_format == OutputFormat::Mp3 ? ".mp3" : ".ogg";
+    const std::string extension = format_extension(options.output_format);
     if (options.output) {
         auto output = *options.output;
         if (!output.has_extension()) {
@@ -199,6 +234,38 @@ std::vector<std::filesystem::path> collect_batch_inputs(const std::filesystem::p
     return inputs;
 }
 
+namespace {
+
+std::string ascii_lower(std::string text) {
+    std::transform(text.begin(), text.end(), text.begin(),
+                   [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    return text;
+}
+
+} // namespace
+
+std::filesystem::path reserve_unique_destination(ReservedPaths& reserved, const std::filesystem::path& destination,
+                                                 Diagnostics& diagnostics) {
+    // Case-insensitive so a collision on NTFS/APFS (where "Song.mp3" and
+    // "song.mp3" are one file) is caught, not only exact duplicates.
+    if (reserved.insert(ascii_lower(io::path_to_utf8(destination))).second) return destination;
+
+    const auto directory = destination.parent_path();
+    const auto stem = destination.stem();
+    const auto extension = destination.extension();
+    for (int suffix = 2;; ++suffix) {
+        auto candidate_name = stem;
+        candidate_name += " (" + std::to_string(suffix) + ")";
+        candidate_name += extension;
+        const auto candidate = directory / candidate_name;
+        if (reserved.insert(ascii_lower(io::path_to_utf8(candidate))).second) {
+            diagnostics.warn("output name '" + io::path_to_utf8(destination.filename()) + "' is already taken; wrote '" +
+                             io::path_to_utf8(candidate.filename()) + "' instead");
+            return candidate;
+        }
+    }
+}
+
 std::string banner() {
     return std::string("RenderOJN v") + version::kVersion + "\n" + version::kProjectUrl + "\n";
 }
@@ -225,6 +292,9 @@ void collect_play_warnings(const Options& options, Diagnostics& diagnostics) {
     if (!options.play) return;
     if (options.format_set) diagnostics.warn("--format is ignored by --play");
     if (options.output_set) diagnostics.warn("--outfile is ignored by --play");
+    if (options.outdir) diagnostics.warn("--outdir is ignored by --play");
+    if (options.title_as_filename) diagnostics.warn("--title-as-filename is ignored by --play");
+    if (!options.cover_art) diagnostics.warn("--no-cover-art is ignored by --play");
     if (options.quality_set) diagnostics.warn("--quality is ignored by --play");
     if (options.tracks != render::TrackSelection::All) diagnostics.warn("--tracks is ignored by --play; all notes are played");
     if (options.render_mode_set) diagnostics.warn("--rendermode is ignored by --play; realtime playback is used");
