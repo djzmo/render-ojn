@@ -69,11 +69,18 @@ export function useQueue() {
   // slow enough to need its own state so the button can say so.
   const [isPacking, setIsPacking] = React.useState(false)
 
-  // Bumped whenever a render setting changes. A render captures the value at
-  // start and its result is dropped if the value has moved on by the time it
-  // finishes -- otherwise a render begun under Quick could land as a "done"
-  // download while the controls already say Realtime.
-  const settingsGeneration = React.useRef(0)
+  // A monotonically increasing id for the current render settings. It is bumped
+  // whenever a setting changes (see discardResults) and mirrored into a ref so a
+  // render in flight can compare against it when it finishes: a result whose
+  // generation no longer matches belongs to settings the user has moved on from,
+  // and is dropped rather than presented under the wrong controls.
+  //
+  // The counter lives in a ref, but renderOne captures its value in its own
+  // closure (currentGeneration below) -- so a stale renderOne held by an
+  // in-progress renderAll loop carries the generation it was created with, not
+  // the live one, and its later rows are rejected too.
+  const generationRef = React.useRef(0)
+  const [currentGeneration, setCurrentGeneration] = React.useState(0)
 
   // Object URLs outlive React state, so they are tracked for explicit revoke.
   const objectUrls = React.useRef(new Set<string>())
@@ -91,6 +98,19 @@ export function useQueue() {
       )
     },
     []
+  )
+
+  // Returns a superseded row to idle, but only while it is still "rendering" --
+  // never stomping a fresh render the user may have started in the meantime.
+  const resetToIdle = React.useCallback(
+    (id: string) => {
+      updateChart(id, (chart) =>
+        chart.render.status === "rendering"
+          ? { ...chart, render: { status: "idle" } }
+          : chart
+      )
+    },
+    [updateChart]
   )
 
   const addFiles = React.useCallback(async (files: File[]) => {
@@ -215,15 +235,26 @@ export function useQueue() {
    * download that no longer matches what the controls say.
    */
   const discardResults = React.useCallback(() => {
-    // Invalidate any render still in flight: its result belonged to the old
-    // settings, so accepting it would leave a mismatched download.
-    settingsGeneration.current += 1
+    // Move to a new generation: any render still in flight now belongs to the
+    // old settings and its result will be dropped when it finishes.
+    generationRef.current += 1
+    setCurrentGeneration(generationRef.current)
     setCharts((current) =>
       current.map((chart) => {
-        if (chart.render.status !== "done") return chart
-        URL.revokeObjectURL(chart.render.url)
-        objectUrls.current.delete(chart.render.url)
-        return { ...chart, render: { status: "idle" } }
+        // A completed result is stale: revoke its blob and reset the row.
+        if (chart.render.status === "done") {
+          URL.revokeObjectURL(chart.render.url)
+          objectUrls.current.delete(chart.render.url)
+          return { ...chart, render: { status: "idle" } }
+        }
+        // A render in flight will be discarded on arrival, so reset the row now
+        // rather than leave it stuck at "rendering" (which would keep the
+        // Render button disabled forever).  The worker keeps running to
+        // completion; its result is simply ignored.
+        if (chart.render.status === "rendering") {
+          return { ...chart, render: { status: "idle" } }
+        }
+        return chart
       })
     )
   }, [])
@@ -294,9 +325,11 @@ export function useQueue() {
       const renderQuality = quality
       const renderTracks = tracks
       const renderScheduling = renderMode
-      // The generation these settings belong to; if the user changes a setting
-      // while this render is in flight, the result is discarded on arrival.
-      const generation = settingsGeneration.current
+      // The generation these settings belong to, captured from the closure -- so
+      // a renderOne held by an in-flight renderAll loop (created before the
+      // change) carries the OLD generation and its later rows are rejected too,
+      // even though generationRef has already advanced.
+      const generation = currentGeneration
 
       updateChart(id, (chart) => ({
         ...chart,
@@ -327,10 +360,14 @@ export function useQueue() {
           }
         )
 
-        // A setting changed while this was rendering: the bytes are for the old
-        // settings, so drop them rather than present a mismatched download. The
-        // discardResults call already reset the row to idle.
-        if (settingsGeneration.current !== generation) return
+        // A setting changed since this render started: the bytes are for the old
+        // settings, so drop them and leave the row idle rather than present a
+        // mismatched download.  Resetting here (not only in discardResults)
+        // covers rows a stale renderAll loop starts *after* the change.
+        if (generationRef.current !== generation) {
+          resetToIdle(id)
+          return
+        }
 
         const blob = new Blob([bytes as BlobPart], {
           type: MIME_TYPES[renderFormat],
@@ -356,8 +393,12 @@ export function useQueue() {
           description: `${DIFFICULTY_NAMES[difficulty]} · ${renderFormat.toUpperCase()}`,
         })
       } catch (error) {
-        // A superseded render's failure is not the current settings' failure.
-        if (settingsGeneration.current !== generation) return
+        // A superseded render's failure is not the current settings' failure;
+        // leave the row idle so it can be re-rendered under the new settings.
+        if (generationRef.current !== generation) {
+          resetToIdle(id)
+          return
+        }
         const message = messageFrom(error, "The render failed.")
         updateChart(id, (chart) => ({
           ...chart,
@@ -368,7 +409,7 @@ export function useQueue() {
         })
       }
     },
-    [format, quality, tracks, renderMode, updateChart]
+    [format, quality, tracks, renderMode, currentGeneration, updateChart, resetToIdle]
   )
 
   /**
@@ -388,8 +429,15 @@ export function useQueue() {
     // removed mid-batch must not still be rendered, and a row that pairs while
     // the batch runs should be picked up. `done` guards termination — every
     // completed row stops matching, so the loop always drains.
+    // The generation this batch belongs to. If the user changes a setting
+    // mid-batch, this loop is now rendering under stale settings (its renderOne
+    // is the old one); stop rather than churn through the rest, whose results
+    // would only be discarded. The user re-runs "Render all" under the new
+    // settings, which a fresh loop then picks up.
+    const generation = generationRef.current
     const attempted = new Set<string>()
     for (;;) {
+      if (generationRef.current !== generation) break
       const next = pairedRef.current.find(
         (chart) => isPending(chart) && !attempted.has(chart.id)
       )
