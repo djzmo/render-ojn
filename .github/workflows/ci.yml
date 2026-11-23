@@ -102,7 +102,9 @@ jobs:
       # this job run on a fresh clone in seconds.
 
   macos:
-    runs-on: macos-14
+    # macos-14 images were retired on 2026-11-02; jobs on it are cancelled
+    # before they start ("configuration ... is not supported").
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       # Excludes ports/ for the same reason as the windows job above.
