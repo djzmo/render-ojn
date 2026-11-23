@@ -17,12 +17,21 @@ constexpr std::size_t kMaxEncodedSampleBytes = 256U * 1024U * 1024U;
     throw Error(ExitCode::Runtime, "Malformed sample package: " + message);
 }
 
-void append_sample(Package& package, std::uint16_t id, std::vector<std::uint8_t> bytes, std::set<std::uint16_t>& ids) {
+void append_sample(Package& package, std::uint16_t id, std::vector<std::uint8_t> bytes, std::string name,
+                   std::set<std::uint16_t>& ids) {
     if (bytes.empty()) malformed("encoded sample is empty");
     if (bytes.size() > kMaxEncodedSampleBytes) malformed("encoded sample exceeds 256 MiB limit");
     if (package.samples.size() >= kMaxSamples) malformed("sample count exceeds limit");
     if (!ids.insert(id).second) malformed("duplicate sample id");
-    package.samples.push_back({id, std::move(bytes)});
+    package.samples.push_back({id, std::move(bytes), std::move(name)});
+}
+
+// A record's 32-byte name field.  Cut at the first NUL, not trimmed: M30
+// records carry leftover non-zero bytes after the terminator.
+std::string record_name(io::ByteReader& input, const char* field) {
+    auto raw = input.raw_fixed(32, field);
+    raw.resize(std::min(raw.size(), raw.find('\0')));
+    return raw;
 }
 
 constexpr std::array<std::uint8_t, 290> kOmCRearrangeTable = {
@@ -175,7 +184,7 @@ Package parse_m30(io::ByteReader input) {
     while (input.remaining() != 0) {
         if (++records > sample_count) malformed("M30 contains more records than declared");
         if (input.remaining() < 52) malformed("truncated M30 sample record");
-        static_cast<void>(input.raw_fixed(32, "M30 sample name"));
+        auto name = record_name(input, "M30 sample name");
         const auto size = input.u32le("M30 sample size");
         const auto codec_code = input.u16le("M30 sample codec code");
         static_cast<void>(input.take(6, "M30 sample reserved field"));
@@ -197,7 +206,7 @@ Package parse_m30(io::ByteReader input) {
         }
         const auto adjusted = static_cast<std::uint32_t>(reference) + 1U + (codec_code == 0U ? 1000U : 0U);
         if (adjusted > std::numeric_limits<std::uint16_t>::max()) malformed("M30 sample id overflows");
-        append_sample(package, static_cast<std::uint16_t>(adjusted), std::move(bytes), ids);
+        append_sample(package, static_cast<std::uint16_t>(adjusted), std::move(bytes), std::move(name), ids);
     }
     if (records != sample_count) malformed("M30 record count does not match header");
     return package;
@@ -221,7 +230,7 @@ Package parse_omc(io::ByteReader input, PackageKind kind) {
     std::uint32_t id = 1;
     for (std::uint32_t index = 0; index < wav_count; ++index, ++id) {
         if (input.remaining() < 56 || input.position() + 56 > ogg_offset) malformed("truncated PCM sample record");
-        static_cast<void>(input.raw_fixed(32, "PCM sample name"));
+        auto name = record_name(input, "PCM sample name");
         const auto audio_format = input.u16le("PCM format");
         const auto channels = input.u16le("PCM channels");
         const auto sample_rate = input.u32le("PCM sample rate");
@@ -240,13 +249,13 @@ Package parse_omc(io::ByteReader input, PackageKind kind) {
         auto wav = kind == PackageKind::OMC
                        ? decode_omc_wave(std::move(bytes), xor_state, audio_format, channels, sample_rate, byte_rate, block_align, bits_per_sample)
                        : make_pcm_wave(std::move(bytes), audio_format, channels, sample_rate, byte_rate, block_align, bits_per_sample);
-        append_sample(package, static_cast<std::uint16_t>(id), std::move(wav), ids);
+        append_sample(package, static_cast<std::uint16_t>(id), std::move(wav), std::move(name), ids);
     }
     if (input.position() != ogg_offset) malformed("PCM records do not end at Ogg offset");
     id = 1001;
     for (std::uint32_t index = 0; index < ogg_count; ++index, ++id) {
         if (input.remaining() < 36) malformed("truncated Ogg sample record");
-        static_cast<void>(input.raw_fixed(32, "Ogg sample name"));
+        auto name = record_name(input, "Ogg sample name");
         const auto size = input.u32le("Ogg payload size");
         if (size > kMaxEncodedSampleBytes) malformed("Ogg sample exceeds 256 MiB limit");
         if (size == 0) {
@@ -255,7 +264,7 @@ Package parse_omc(io::ByteReader input, PackageKind kind) {
         }
         auto bytes = input.take(size, "Ogg payload");
         if (id > std::numeric_limits<std::uint16_t>::max()) malformed("Ogg sample id overflows");
-        append_sample(package, static_cast<std::uint16_t>(id), std::move(bytes), ids);
+        append_sample(package, static_cast<std::uint16_t>(id), std::move(bytes), std::move(name), ids);
     }
     // O2Jam-authored OJM files can append zero-byte Ogg directory records after
     // the declared Ogg count. Accept only complete 36-byte records with no

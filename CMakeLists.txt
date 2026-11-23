@@ -40,6 +40,7 @@ set(RENDEROJN_CORE_SOURCES
     src/core/audio/OggNormalizer.cpp
     src/core/render/Mixer.cpp
     src/core/output/Encoder.cpp
+    src/core/output/SampleArchive.cpp
     src/app/ChartTags.cpp
     src/app/Cli.cpp)
 

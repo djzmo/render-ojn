@@ -7,8 +7,10 @@
 #include "core/format/OjnParser.hpp"
 #include "core/format/PackageParser.hpp"
 #include "core/io/ByteReader.hpp"
+#include "core/io/File.hpp"
 #include "core/io/Path.hpp"
 #include "core/output/Encoder.hpp"
+#include "core/output/SampleArchive.hpp"
 #include "core/render/Mixer.hpp"
 
 #include <filesystem>
@@ -59,6 +61,32 @@ void print_warnings(const renderojn::Diagnostics& diagnostics, const char* inden
     for (const auto& warning : diagnostics.warnings()) std::cerr << indent << "warning: " << warning << '\n';
 }
 
+void warn_empty_records(const renderojn::format::Package& package, renderojn::Diagnostics& diagnostics) {
+    if (package.empty_pcm_slot_records != 0) {
+        diagnostics.warn("sample package contains " + std::to_string(package.empty_pcm_slot_records) +
+                         " empty PCM directory slot record(s); ignored");
+    }
+    if (package.empty_ogg_sentinel_records != 0) {
+        diagnostics.warn("sample package contains " + std::to_string(package.empty_ogg_sentinel_records) +
+                         " empty Ogg directory slot record(s); ignored");
+    }
+}
+
+// --extract-samples: the input is the package itself.  The archive comes from
+// the same core function the WebAssembly build calls, so both write identical
+// files.
+void extract_samples(const renderojn::app::Options& options, renderojn::Diagnostics& diagnostics) {
+    const auto package = renderojn::format::parse_sample_package(renderojn::io::read_file(options.input, kTwoGiB, "sample package"));
+    warn_empty_records(package, diagnostics);
+    const auto archive = renderojn::output::build_sample_zip(package);
+    const auto destination = renderojn::app::resolve_extract_path(options);
+    if (options.outdir) std::filesystem::create_directories(*options.outdir);
+    renderojn::io::TransactionalFile file(destination);
+    file.stream().write(reinterpret_cast<const char*>(archive.data()), static_cast<std::streamsize>(archive.size()));
+    file.commit();
+    std::cout << "Extracted " << package.samples.size() << " sample(s) to " << renderojn::io::path_to_utf8(destination) << '\n';
+}
+
 // Renders (or plays) one chart end to end and returns the published path --
 // empty under --play.  Everything that decides how a chart sounds lives in the
 // shared core; this only sequences it, exactly as src/wasm/Bindings.cpp does.
@@ -90,14 +118,7 @@ std::filesystem::path render_one(const renderojn::app::Options& options, const s
     auto compatible_chart = chart;
     renderojn::compat::apply_known_ojn_ojm_profiles(compatible_chart, *normalized, *package_data, diagnostics);
     const auto package = renderojn::format::parse_sample_package(package_data);
-    if (package.empty_pcm_slot_records != 0) {
-        diagnostics.warn("sample package contains " + std::to_string(package.empty_pcm_slot_records) +
-                         " empty PCM directory slot record(s); ignored");
-    }
-    if (package.empty_ogg_sentinel_records != 0) {
-        diagnostics.warn("sample package contains " + std::to_string(package.empty_ogg_sentinel_records) +
-                         " empty Ogg directory slot record(s); ignored");
-    }
+    warn_empty_records(package, diagnostics);
     const auto samples = renderojn::audio::decode_samples(package, diagnostics);
 
     if (options.play) {
@@ -177,6 +198,14 @@ int run(const std::vector<std::string>& arguments) {
             return static_cast<int>(renderojn::ExitCode::Success);
         }
         const bool batch = std::filesystem::is_directory(options.input);
+        if (options.extract_samples) {
+            renderojn::app::validate_extract_options(options, batch);
+            renderojn::app::collect_extract_warnings(options, diagnostics);
+            std::cout << renderojn::app::banner();
+            extract_samples(options, diagnostics);
+            print_warnings(diagnostics);
+            return static_cast<int>(renderojn::ExitCode::Success);
+        }
         renderojn::app::validate_output_options(options, batch);
         renderojn::app::collect_play_warnings(options, diagnostics);
         if (!options.play && options.output_format == renderojn::app::OutputFormat::Wav) diagnostics.warn("WAV ignores --quality");

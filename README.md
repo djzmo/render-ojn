@@ -25,6 +25,12 @@ See it in action: https://www.youtube.com/watch?v=snYnd_IvmbM
 
 ## Version History ##
 
+### Unreleased
+- Added `--extract-samples` to save every sample in an `.ojm` to a ZIP instead
+  of rendering. Entries are named `<id>_<stored name>.ogg` or `.wav`, with
+  Korean names decoded from CP949. The web app offers the same on any dropped
+  package that no chart has claimed, and both produce identical archives.
+
 ### v1.0.3
 - Korean and Japanese titles, artists and charter names are decoded from the
   OJN's CP949 text and written to the MP3/Ogg tags as UTF-8, so they no longer
@@ -120,6 +126,9 @@ Misc. Options:
   --sample-package <path>   Sample package to use instead of the one named
                             in the OJN
   --play                    Play the music instead of generating an output file
+  --extract-samples         Treat the input as an .ojm and save its samples to
+                            <input stem>.zip (or --outfile/--outdir) instead
+                            of rendering
   --help                    Display this text
 ```
 
@@ -133,6 +142,7 @@ RenderOJN o2ma100.ojn --tracks background         (writes o2ma100_background.mp3
 RenderOJN o2ma100.ojn --title-as-filename         (writes Bach Alive.mp3)
 RenderOJN "C:\O2Jam\Music" --title-as-filename    (renders every .ojn into C:\O2Jam\Music\render)
 RenderOJN o2ma100.ojn --play
+RenderOJN o2ma100.ojm --extract-samples           (writes o2ma100.zip)
 RenderOJN --help
 ```
 

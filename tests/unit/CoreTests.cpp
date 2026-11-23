@@ -9,6 +9,7 @@
 #include "core/format/PackageParser.hpp"
 #include "core/io/ByteReader.hpp"
 #include "core/io/Path.hpp"
+#include "core/output/SampleArchive.hpp"
 #include "core/render/Mixer.hpp"
 #include "../fixtures/SyntheticFixture.hpp"
 
@@ -283,6 +284,73 @@ TEST_CASE("CLI --outdir redirects the default name and validate_output_options r
     CHECK_NOTHROW(renderojn::app::validate_output_options(renderojn::app::parse_cli({"charts", "--outdir", "out"}), true));
     CHECK_NOTHROW(renderojn::app::validate_output_options(renderojn::app::parse_cli({"song.ojn", "--outfile", "x.mp3"}), false));
     CHECK_NOTHROW(renderojn::app::validate_output_options(renderojn::app::parse_cli({"song.ojn", "--sample-package", "x.ojm"}), false));
+}
+
+TEST_CASE("CLI --extract-samples names <stem>.zip and rejects folders and --play") {
+    using renderojn::app::parse_cli;
+    using renderojn::app::resolve_extract_path;
+    CHECK(parse_cli({"o2ma100.ojm", "--extract-samples"}).extract_samples);
+    CHECK_FALSE(parse_cli({"o2ma100.ojn"}).extract_samples);
+    CHECK(resolve_extract_path(parse_cli({"folder/o2ma100.ojm", "--extract-samples"})) ==
+          std::filesystem::absolute("folder") / "o2ma100.zip");
+    CHECK(resolve_extract_path(parse_cli({"o2ma100.ojm", "--extract-samples", "--outdir", "out"})) ==
+          std::filesystem::path("out") / "o2ma100.zip");
+    CHECK(resolve_extract_path(parse_cli({"o2ma100.ojm", "--extract-samples", "--outfile", "bach"})).filename() == "bach.zip");
+    CHECK(resolve_extract_path(parse_cli({"o2ma100.ojm", "--extract-samples", "--outfile", "bach.zip"})).filename() == "bach.zip");
+    CHECK_THROWS_AS(renderojn::app::validate_extract_options(parse_cli({"charts", "--extract-samples"}), true), renderojn::Error);
+    CHECK_THROWS_AS(renderojn::app::validate_extract_options(parse_cli({"x.ojm", "--extract-samples", "--play"}), false), renderojn::Error);
+    CHECK_THROWS_AS(renderojn::app::validate_extract_options(parse_cli({"x.ojm", "--extract-samples", "--outdir", "o", "--outfile", "x"}), false),
+                    renderojn::Error);
+    CHECK_NOTHROW(renderojn::app::validate_extract_options(parse_cli({"x.ojm", "--extract-samples", "--outfile", "x"}), false));
+}
+
+TEST_CASE("sample archive names entries <id>_<stored name>.<ext> from the decoded bytes") {
+    using renderojn::format::EncodedSample;
+    using renderojn::output::sample_entry_name;
+    const std::vector<std::uint8_t> ogg{'O', 'g', 'g', 'S', 1, 2, 3};
+    const std::vector<std::uint8_t> wav{'R', 'I', 'F', 'F', 0, 0, 0, 0, 'W', 'A', 'V', 'E'};
+    const std::vector<std::uint8_t> other{1, 2, 3};
+    // A stored extension matching the real one is not doubled (o2ma100's names).
+    CHECK(sample_entry_name({1, ogg, "piano.OGG"}) == "0001_piano.ogg");
+    CHECK(sample_entry_name({1001, ogg, "003_bach live - master.ogg"}) == "1001_003_bach live - master.ogg");
+    CHECK(sample_entry_name({2, wav, ""}) == "0002.wav");
+    CHECK(sample_entry_name({2, wav, "section #001"}) == "0002_section #001.wav");
+    // CP949 names (o2ma401's) become UTF-8: C4 AA is U+CE6D.
+    CHECK(sample_entry_name({1001, ogg, "\xC4\xAA" "1"}) == "1001_\xEC\xB9\xAD" "1.ogg");
+    // Path separators and reserved characters cannot escape or break the name.
+    CHECK(sample_entry_name({3, other, "../a/b:c. "}) == "0003_.._a_b_c.bin");
+    CHECK(sample_entry_name({4, other, " . "}) == "0004.bin");
+}
+
+TEST_CASE("sample archive is a stored ZIP with one entry per sample") {
+    const std::vector<std::uint8_t> ogg{'O', 'g', 'g', 'S', 1, 2, 3};
+    renderojn::format::Package package;
+    package.samples.push_back({1, ogg, "kick"});
+    package.samples.push_back({2, {'R', 'I', 'F', 'F', 0, 0, 0, 0, 'W', 'A', 'V', 'E'}, ""});
+    const auto zip = renderojn::output::build_sample_zip(package);
+    const auto u16 = [&zip](std::size_t at) { return static_cast<unsigned>(zip[at] | (zip[at + 1] << 8)); };
+    const auto u32 = [&](std::size_t at) { return u16(at) | (u16(at + 2) << 16); };
+
+    // First local header: stored, UTF-8 flag, CRC-32 of the payload (computed
+    // independently with zlib.crc32), name, then the bytes verbatim.
+    REQUIRE(zip.size() > 30);
+    CHECK(u32(0) == 0x04034B50U);
+    CHECK(u16(6) == 0x0800U);
+    CHECK(u16(8) == 0U);
+    CHECK(u32(14) == 0x6289B712U);
+    CHECK(u32(18) == ogg.size());
+    CHECK(std::string(zip.begin() + 30, zip.begin() + 30 + u16(26)) == "0001_kick.ogg");
+    CHECK(std::equal(ogg.begin(), ogg.end(), zip.begin() + 30 + u16(26)));
+
+    // End record: two entries, and the central directory it points at is real.
+    const auto end = zip.size() - 22;
+    CHECK(u32(end) == 0x06054B50U);
+    CHECK(u16(end + 10) == 2U);
+    CHECK(u32(u32(end + 16)) == 0x02014B50U);
+    CHECK(u32(end + 16) + u32(end + 12) == end);
+
+    // Same package, same bytes: the timestamp is fixed.
+    CHECK(renderojn::output::build_sample_zip(package) == zip);
 }
 
 TEST_CASE("filename sanitizer replaces what no filesystem accepts and trims the ends") {

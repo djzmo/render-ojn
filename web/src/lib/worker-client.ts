@@ -135,5 +135,12 @@ export function createWorkerModule(): RenderOjnModule {
       )
       return { bytes: value as Uint8Array, warnings }
     },
+
+    async extractSamples(ojm: Uint8Array): Promise<RenderResult> {
+      const { value, warnings } = await send({ kind: "extract", ojm }, [
+        ojm.buffer,
+      ])
+      return { bytes: value as Uint8Array, warnings }
+    },
   }
 }

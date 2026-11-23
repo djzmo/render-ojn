@@ -41,6 +41,8 @@ export default function App() {
             onClear={queue.clearAll}
             onDownloadAll={queue.downloadAll}
             isPacking={queue.isPacking}
+            onExtract={queue.extractPackage}
+            extractingIds={queue.extractingIds}
             readyCount={queue.readyCount}
             doneCount={queue.doneCount}
             isRendering={queue.isRendering}

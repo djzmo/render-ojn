@@ -156,6 +156,12 @@ export interface RenderOjnModule {
     tracks: Tracks,
     onProgress: ProgressCallback
   ): Promise<RenderResult>
+
+  /**
+   * Every sample in a package, as a ZIP. Built by the same core function the
+   * CLI's `--extract-samples` uses, so the archives are byte-identical.
+   */
+  extractSamples(ojm: Uint8Array): Promise<RenderResult>
 }
 
 /** Thrown for a file the parser cannot read. Surfaced on the row itself. */

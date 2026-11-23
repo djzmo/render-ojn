@@ -7,6 +7,7 @@
  * `loadRenderOjn` points at the real binding.
  */
 import { PACKAGE_EXTENSIONS } from "./pairing"
+import { createZip } from "./zip"
 import {
   OjnParseError,
   type Difficulty,
@@ -158,6 +159,21 @@ async function render(
   return { bytes: out, warnings: [] }
 }
 
+async function extractSamples(ojm: Uint8Array): Promise<RenderResult> {
+  await delay(150)
+  // A real, openable archive in the real module's naming, so the download
+  // path can be exercised end to end.
+  const ogg = new TextEncoder().encode("OggS")
+  const archive = createZip(
+    [
+      { name: "0001_kick.ogg", bytes: ogg },
+      { name: `1001_${hash(ojm) % 100}.ogg`, bytes: ogg },
+    ],
+    new Date(1980, 0, 1)
+  )
+  return { bytes: new Uint8Array(await archive.arrayBuffer()), warnings: [] }
+}
+
 export function createStubModule(): RenderOjnModule {
-  return { readOjnInfo, render }
+  return { readOjnInfo, render, extractSamples }
 }

@@ -1,4 +1,9 @@
-import { DownloadIcon, PlayIcon, Trash2Icon } from "lucide-react"
+import {
+  DownloadIcon,
+  FileArchiveIcon,
+  PlayIcon,
+  Trash2Icon,
+} from "lucide-react"
 
 import { ChartRow } from "@/components/chart-row"
 import { Dropzone } from "@/components/dropzone"
@@ -50,6 +55,8 @@ interface RenderQueueProps {
   onClear: () => void
   onDownloadAll: () => void
   isPacking: boolean
+  onExtract: (id: string) => void
+  extractingIds: ReadonlySet<string>
   readyCount: number
   doneCount: number
   isRendering: boolean
@@ -74,6 +81,8 @@ export function RenderQueue({
   onClear,
   onDownloadAll,
   isPacking,
+  onExtract,
+  extractingIds,
   readyCount,
   doneCount,
   isRendering,
@@ -89,7 +98,13 @@ export function RenderQueue({
     return (
       <div className="flex flex-col gap-4">
         <Dropzone onFiles={onFiles} />
-        {held.length ? <HeldNotice held={held} /> : null}
+        {held.length ? (
+          <HeldPackages
+            held={held}
+            onExtract={onExtract}
+            extractingIds={extractingIds}
+          />
+        ) : null}
         {rejected.length ? (
           <RejectedNotice files={rejected} onDismiss={onDismissRejected} />
         ) : null}
@@ -282,25 +297,65 @@ export function RenderQueue({
       </Card>
 
       <Dropzone onFiles={onFiles} compact />
-      {held.length ? <HeldNotice held={held} /> : null}
+      {held.length ? (
+        <HeldPackages
+          held={held}
+          onExtract={onExtract}
+          extractingIds={extractingIds}
+        />
+      ) : null}
     </div>
   )
 }
 
-/** Packages nothing has claimed. Held quietly, per §4 — not an error. */
-function HeldNotice({ held }: { held: SamplePackage[] }) {
+/**
+ * Packages nothing has claimed. Held quietly, per §4 — not an error. Each one
+ * can be extracted on its own, which is how a lone `.ojm` gets its samples out.
+ */
+function HeldPackages({
+  held,
+  onExtract,
+  extractingIds,
+}: {
+  held: SamplePackage[]
+  onExtract: (id: string) => void
+  extractingIds: ReadonlySet<string>
+}) {
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 text-xs text-muted-foreground">
+    <div className="flex flex-col gap-1.5 px-1 text-xs text-muted-foreground">
       <span>
         {held.length} unmatched {held.length === 1 ? "package" : "packages"} held
-        for later:
+        for later. Extract one to save its samples as a ZIP.
       </span>
-      {held.slice(0, 4).map((pkg) => (
-        <span key={pkg.id} data-file-data className="text-foreground/60">
-          {pkg.fileName}
-        </span>
-      ))}
-      {held.length > 4 ? <span>and {held.length - 4} more</span> : null}
+      <ul className="flex flex-col gap-1">
+        {held.map((pkg) => {
+          const busy = extractingIds.has(pkg.id)
+          return (
+            <li
+              key={pkg.id}
+              className="flex items-center justify-between gap-3"
+            >
+              <span data-file-data className="truncate text-foreground/60">
+                {pkg.fileName}
+              </span>
+              <Button
+                variant="ghost"
+                size="xs"
+                onClick={() => onExtract(pkg.id)}
+                disabled={busy}
+                aria-label={`Extract samples from ${pkg.fileName}`}
+              >
+                {busy ? (
+                  <Spinner data-icon="inline-start" />
+                ) : (
+                  <FileArchiveIcon data-icon="inline-start" />
+                )}
+                {busy ? "Extracting" : "Extract ZIP"}
+              </Button>
+            </li>
+          )
+        })}
+      </ul>
     </div>
   )
 }
