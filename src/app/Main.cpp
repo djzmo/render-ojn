@@ -76,10 +76,10 @@ void warn_empty_records(const renderojn::format::Package& package, renderojn::Di
 // the same core function the WebAssembly build calls, so both write identical
 // files.
 void extract_samples(const renderojn::app::Options& options, renderojn::Diagnostics& diagnostics) {
+    const auto destination = renderojn::app::resolve_extract_path(options);  // usage errors before any work
     const auto package = renderojn::format::parse_sample_package(renderojn::io::read_file(options.input, kTwoGiB, "sample package"));
     warn_empty_records(package, diagnostics);
     const auto archive = renderojn::output::build_sample_zip(package);
-    const auto destination = renderojn::app::resolve_extract_path(options);
     if (options.outdir) std::filesystem::create_directories(*options.outdir);
     renderojn::io::TransactionalFile file(destination);
     file.stream().write(reinterpret_cast<const char*>(archive.data()), static_cast<std::streamsize>(archive.size()));

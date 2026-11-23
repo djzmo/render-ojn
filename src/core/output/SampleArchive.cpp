@@ -70,16 +70,22 @@ void put(std::vector<std::uint8_t>& out, std::uint64_t value, int width) {
 std::string sample_entry_name(const format::EncodedSample& sample) {
     const std::string extension = extension_for(sample.bytes);
     auto name = text::decode_ojn_text(sample.name);
-    // Some packages store the file name with its extension ("003_bach live -
-    // master.ogg"); do not double it.
-    if (ends_with_ignoring_case(name, extension)) name.resize(name.size() - extension.size());
     for (auto& character : name) {
         const auto byte = static_cast<unsigned char>(character);
         if (byte < 0x20 || byte == 0x7F || std::strchr("\\/:*?\"<>|", character) != nullptr) character = '_';
     }
     // Windows drops trailing spaces and dots; leading spaces only confuse.
-    name.resize(name.find_last_not_of(" .") + 1);  // npos + 1 == 0: all spaces/dots
-    name.erase(0, name.find_first_not_of(' '));
+    const auto trim = [&name] {
+        name.resize(name.find_last_not_of(" .") + 1);  // npos + 1 == 0: all spaces/dots
+        name.erase(0, name.find_first_not_of(' '));
+    };
+    trim();
+    // Some packages store the file name with its extension ("003_bach live -
+    // master.ogg"); do not double it.  After the trim, so "x.ogg " counts too.
+    if (ends_with_ignoring_case(name, extension)) {
+        name.resize(name.size() - extension.size());
+        trim();
+    }
 
     std::array<char, 8> id{};
     std::snprintf(id.data(), id.size(), "%04u", static_cast<unsigned>(sample.id));

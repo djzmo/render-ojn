@@ -297,6 +297,10 @@ TEST_CASE("CLI --extract-samples names <stem>.zip and rejects folders and --play
           std::filesystem::path("out") / "o2ma100.zip");
     CHECK(resolve_extract_path(parse_cli({"o2ma100.ojm", "--extract-samples", "--outfile", "bach"})).filename() == "bach.zip");
     CHECK(resolve_extract_path(parse_cli({"o2ma100.ojm", "--extract-samples", "--outfile", "bach.zip"})).filename() == "bach.zip");
+    // Never a non-ZIP name: --outfile o2ma100.ojm would replace the input.
+    CHECK_THROWS_AS(resolve_extract_path(parse_cli({"o2ma100.ojm", "--extract-samples", "--outfile", "o2ma100.ojm"})),
+                    renderojn::Error);
+    CHECK_THROWS_AS(resolve_extract_path(parse_cli({"o2ma100.ojm", "--extract-samples", "--outfile", "bach.mp3"})), renderojn::Error);
     CHECK_THROWS_AS(renderojn::app::validate_extract_options(parse_cli({"charts", "--extract-samples"}), true), renderojn::Error);
     CHECK_THROWS_AS(renderojn::app::validate_extract_options(parse_cli({"x.ojm", "--extract-samples", "--play"}), false), renderojn::Error);
     CHECK_THROWS_AS(renderojn::app::validate_extract_options(parse_cli({"x.ojm", "--extract-samples", "--outdir", "o", "--outfile", "x"}), false),
@@ -313,6 +317,9 @@ TEST_CASE("sample archive names entries <id>_<stored name>.<ext> from the decode
     // A stored extension matching the real one is not doubled (o2ma100's names).
     CHECK(sample_entry_name({1, ogg, "piano.OGG"}) == "0001_piano.ogg");
     CHECK(sample_entry_name({1001, ogg, "003_bach live - master.ogg"}) == "1001_003_bach live - master.ogg");
+    CHECK(sample_entry_name({1, ogg, "piano.ogg "}) == "0001_piano.ogg");
+    CHECK(sample_entry_name({1, ogg, "piano .ogg."}) == "0001_piano.ogg");
+    CHECK(sample_entry_name({1, ogg, ".ogg"}) == "0001.ogg");
     CHECK(sample_entry_name({2, wav, ""}) == "0002.wav");
     CHECK(sample_entry_name({2, wav, "section #001"}) == "0002_section #001.wav");
     // CP949 names (o2ma401's) become UTF-8: C4 AA is U+CE6D.

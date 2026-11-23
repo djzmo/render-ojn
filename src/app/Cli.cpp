@@ -184,6 +184,10 @@ std::filesystem::path resolve_extract_path(const Options& options) {
     if (options.output) {
         auto output = *options.output;
         if (!output.has_extension()) output += ".zip";
+        // Anything else risks overwriting the input .ojm (or a song) with a ZIP.
+        if (output.extension() != std::filesystem::path(".zip")) {
+            usage_error("--outfile must end in .zip with --extract-samples");
+        }
         return output;
     }
     auto name = options.input.stem();
