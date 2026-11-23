@@ -14,6 +14,7 @@
 #include "core/format/Types.hpp"
 #include "core/io/ByteReader.hpp"
 #include "core/output/Encoder.hpp"
+#include "core/output/SampleArchive.hpp"
 #include "core/render/Mixer.hpp"
 
 #include "app/ChartTags.hpp"
@@ -89,6 +90,23 @@ struct RenderResult {
     std::vector<std::string> warnings;
 };
 
+void warn_empty_records(const format::Package& package, Diagnostics& diagnostics) {
+    if (package.empty_pcm_slot_records != 0) {
+        diagnostics.warn("sample package contains " + std::to_string(package.empty_pcm_slot_records) +
+                         " empty PCM directory slot record(s); ignored");
+    }
+    if (package.empty_ogg_sentinel_records != 0) {
+        diagnostics.warn("sample package contains " + std::to_string(package.empty_ogg_sentinel_records) +
+                         " empty Ogg directory slot record(s); ignored");
+    }
+}
+
+// Hands JavaScript its own copy of `bytes`: a typed_memory_view aliases WASM
+// memory, which the next allocation may invalidate.
+emscripten::val to_js_bytes(const std::vector<std::uint8_t>& bytes) {
+    return emscripten::val(emscripten::typed_memory_view(bytes.size(), bytes.data())).call<emscripten::val>("slice");
+}
+
 OjnInfo read_ojn_info(const emscripten::val& ojn_bytes) {
     Diagnostics diagnostics;
     const auto ojn = format::normalize_ojn(buffer_from(ojn_bytes, "OJN"));
@@ -154,14 +172,7 @@ RenderResult render_chart(const emscripten::val& ojn_bytes, const emscripten::va
     compat::apply_known_ojn_ojm_profiles(compatible_chart, *normalized, *package_data, diagnostics);
 
     const auto package = format::parse_sample_package(package_data);
-    if (package.empty_pcm_slot_records != 0) {
-        diagnostics.warn("sample package contains " + std::to_string(package.empty_pcm_slot_records) +
-                         " empty PCM directory slot record(s); ignored");
-    }
-    if (package.empty_ogg_sentinel_records != 0) {
-        diagnostics.warn("sample package contains " + std::to_string(package.empty_ogg_sentinel_records) +
-                         " empty Ogg directory slot record(s); ignored");
-    }
+    warn_empty_records(package, diagnostics);
     const auto samples = audio::decode_samples(package, diagnostics);
 
     // Shared with the CLI so the tag set (and the cover) cannot drift.  The web
@@ -204,10 +215,19 @@ RenderResult render_chart(const emscripten::val& ojn_bytes, const emscripten::va
     if (report_progress && total_frames > 0 && last_reported < 1.0) on_progress(1.0);
 
     RenderResult result;
-    result.bytes = emscripten::val(emscripten::typed_memory_view(encoded.size(), encoded.data()));
-    // typed_memory_view aliases WASM memory, which the next allocation may
-    // invalidate; hand JavaScript its own copy before returning.
-    result.bytes = result.bytes.call<emscripten::val>("slice");
+    result.bytes = to_js_bytes(encoded);
+    result.warnings = diagnostics.warnings();
+    return result;
+}
+
+// Every sample of a package as a ZIP -- the same core call the CLI's
+// --extract-samples makes, so the two produce identical archives.
+RenderResult extract_samples(const emscripten::val& ojm_bytes) {
+    Diagnostics diagnostics;
+    const auto package = format::parse_sample_package(buffer_from(ojm_bytes, "sample package"));
+    warn_empty_records(package, diagnostics);
+    RenderResult result;
+    result.bytes = to_js_bytes(output::build_sample_zip(package));
     result.warnings = diagnostics.warnings();
     return result;
 }
@@ -241,6 +261,10 @@ RenderResult render_chart_js(const emscripten::val& ojn_bytes, const emscripten:
     });
 }
 
+RenderResult extract_samples_js(const emscripten::val& ojm_bytes) {
+    return with_js_errors([&] { return extract_samples(ojm_bytes); });
+}
+
 } // namespace
 
 EMSCRIPTEN_BINDINGS(renderojn) {
@@ -271,4 +295,5 @@ EMSCRIPTEN_BINDINGS(renderojn) {
     // messages survive the boundary; nothing should bind the raw functions.
     emscripten::function("readOjnInfo", &read_ojn_info_js);
     emscripten::function("render", &render_chart_js);
+    emscripten::function("extractSamples", &extract_samples_js);
 }

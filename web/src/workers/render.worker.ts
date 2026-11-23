@@ -34,6 +34,7 @@ interface EmscriptenModule {
     tracks: number,
     onProgress: ((fraction: number) => void) | undefined
   ): RawRenderResult
+  extractSamples(ojm: Uint8Array): RawRenderResult
   getExceptionMessage?(pointer: number): string[]
 }
 
@@ -79,6 +80,7 @@ export type WorkerRequest =
       quality: Quality
       tracks: Tracks
     }
+  | { id: number; kind: "extract"; ojm: Uint8Array }
 
 export type WorkerResponse =
   | { id: number; kind: "progress"; fraction: number }
@@ -159,15 +161,18 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       return
     }
 
-    const result = module.render(
-      request.ojn,
-      request.ojm,
-      request.difficulty,
-      FORMAT_VALUES[request.format],
-      request.quality,
-      TRACKS_VALUES[request.tracks],
-      (fraction) => post({ id: request.id, kind: "progress", fraction })
-    )
+    const result =
+      request.kind === "extract"
+        ? module.extractSamples(request.ojm)
+        : module.render(
+            request.ojn,
+            request.ojm,
+            request.difficulty,
+            FORMAT_VALUES[request.format],
+            request.quality,
+            TRACKS_VALUES[request.tracks],
+            (fraction) => post({ id: request.id, kind: "progress", fraction })
+          )
 
     // Copy out of the module's view before transferring: the returned array is
     // already a JS-owned slice, but its buffer may be shared with the heap view.

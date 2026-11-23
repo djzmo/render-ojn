@@ -59,6 +59,9 @@ struct Chart {
 struct EncodedSample {
     std::uint16_t id{};
     std::vector<std::uint8_t> bytes;
+    // The record's stored name as raw bytes (often CP949), cut at the first
+    // NUL.  Rendering ignores it; sample extraction names files after it.
+    std::string name;
 };
 
 struct Package {

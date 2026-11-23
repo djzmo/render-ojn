@@ -30,6 +30,9 @@ struct Options {
     std::optional<std::filesystem::path> sample_package;
     bool title_as_filename{};
     bool cover_art{true};
+    // The input is a sample package; write its decoded samples to a ZIP
+    // instead of rendering.
+    bool extract_samples{};
 };
 
 [[nodiscard]] Options parse_cli(const std::vector<std::string>& arguments);
@@ -37,6 +40,14 @@ struct Options {
 // Usage errors that need no file I/O to detect: they run right after parsing so
 // a bad combination fails before anything is read or written.
 void validate_output_options(const Options& options, bool input_is_directory);
+
+// The --extract-samples counterpart: a single package file, no --play, and
+// --outfile/--outdir not combined.
+void validate_extract_options(const Options& options, bool input_is_directory);
+
+// Where --extract-samples writes: --outfile (".zip" added when it has no
+// extension), else <input stem>.zip in --outdir or beside the input.
+[[nodiscard]] std::filesystem::path resolve_extract_path(const Options& options);
 
 // Replaces the characters no filesystem accepts (\ / : * ? " < > | and C0
 // controls) with '_' and trims the spaces and dots Windows will not keep at the
@@ -75,5 +86,6 @@ void validate_output_options(const Options& options, bool input_is_directory);
 [[nodiscard]] std::string usage();
 [[nodiscard]] std::string banner();
 void collect_play_warnings(const Options& options, Diagnostics& diagnostics);
+void collect_extract_warnings(const Options& options, Diagnostics& diagnostics);
 
 } // namespace renderojn::app

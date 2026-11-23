@@ -28,6 +28,18 @@ import {
 let nextId = 0
 const makeId = () => `f${++nextId}`
 
+/** Hands a blob to the browser as a download named `name`. */
+function saveBlob(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement("a")
+  anchor.href = url
+  anchor.download = name
+  anchor.click()
+  // Revoked on a later tick: revoking immediately can cancel the download in
+  // some browsers before it has read the blob.
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
+
 /**
  * The message from anything thrown, including a DOMException.
  *
@@ -493,15 +505,7 @@ export function useQueue() {
         })
       }
 
-      const archive = createZip(entries)
-      const url = URL.createObjectURL(archive)
-      const anchor = document.createElement("a")
-      anchor.href = url
-      anchor.download = "renderojn.zip"
-      anchor.click()
-      // Revoked on a later tick: revoking immediately can cancel the download
-      // in some browsers before it has read the blob.
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+      saveBlob(createZip(entries), "renderojn.zip")
     } catch (error) {
       toast.error("Could not build the zip", {
         description: messageFrom(error, "The archive was not created."),
@@ -510,6 +514,47 @@ export function useQueue() {
       setIsPacking(false)
     }
   }, [])
+
+  // Packages whose samples are being extracted, for the button spinner.
+  const [extractingIds, setExtractingIds] = React.useState<ReadonlySet<string>>(
+    new Set()
+  )
+
+  /**
+   * Downloads every sample in one dropped package as `<package stem>.zip`.
+   * The archive is built in the core, exactly as `--extract-samples` builds it.
+   */
+  const extractPackage = React.useCallback(
+    async (id: string) => {
+      const pkg = packages.find((candidate) => candidate.id === id)
+      if (!pkg) return
+      setExtractingIds((current) => new Set(current).add(id))
+      try {
+        const module = await loadRenderOjn()
+        const { bytes, warnings } = await module.extractSamples(
+          new Uint8Array(await pkg.file.arrayBuffer())
+        )
+        saveBlob(
+          new Blob([bytes as BlobPart], { type: "application/zip" }),
+          `${pkg.fileName.replace(/\.ojm$/i, "")}.zip`
+        )
+        toast.success(`Extracted ${pkg.fileName}`, {
+          description: warnings.length ? warnings.join(" ") : undefined,
+        })
+      } catch (error) {
+        toast.error(`Could not extract ${pkg.fileName}`, {
+          description: messageFrom(error, "The package could not be read."),
+        })
+      } finally {
+        setExtractingIds((current) => {
+          const next = new Set(current)
+          next.delete(id)
+          return next
+        })
+      }
+    },
+    [packages]
+  )
 
   const readyCount = paired.filter(isReady).length
   const doneCount = paired.filter(
@@ -539,6 +584,8 @@ export function useQueue() {
     clearAll,
     downloadAll,
     isPacking,
+    extractPackage,
+    extractingIds,
     readyCount,
     doneCount,
     isRendering,

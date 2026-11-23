@@ -97,6 +97,10 @@ Options parse_cli(const std::vector<std::string>& arguments) {
             result.cover_art = false;
             continue;
         }
+        if (!positional_only && token == "--extract-samples") {
+            result.extract_samples = true;
+            continue;
+        }
         if (!positional_only && token.rfind("--", 0) == 0) usage_error("Unknown option: " + token);
         if (!result.input.empty()) {
             usage_error("Only one input may be supplied (got '" + io::path_to_utf8(result.input) + "' and '" + token +
@@ -104,7 +108,7 @@ Options parse_cli(const std::vector<std::string>& arguments) {
         }
         result.input = io::utf8_to_path(token);
     }
-    if (result.input.empty()) usage_error("Missing input .ojn file");
+    if (result.input.empty()) usage_error(result.extract_samples ? "Missing input .ojm file" : "Missing input .ojn file");
     return result;
 }
 
@@ -166,6 +170,30 @@ void validate_output_options(const Options& options, bool input_is_directory) {
             usage_error("--outfile extension conflicts with --format (expected " + extension + ")");
         }
     }
+}
+
+void validate_extract_options(const Options& options, bool input_is_directory) {
+    if (options.output && options.outdir) {
+        usage_error("--outfile and --outdir cannot be combined; --outfile names the whole path, --outdir only the folder");
+    }
+    if (input_is_directory) usage_error("--extract-samples needs a single .ojm file, not a folder");
+    if (options.play) usage_error("--extract-samples cannot be combined with --play");
+}
+
+std::filesystem::path resolve_extract_path(const Options& options) {
+    if (options.output) {
+        auto output = *options.output;
+        if (!output.has_extension()) output += ".zip";
+        // Anything else risks overwriting the input .ojm (or a song) with a ZIP.
+        if (output.extension() != std::filesystem::path(".zip")) {
+            usage_error("--outfile must end in .zip with --extract-samples");
+        }
+        return output;
+    }
+    auto name = options.input.stem();
+    name += ".zip";
+    const auto directory = options.outdir ? *options.outdir : std::filesystem::absolute(options.input).parent_path();
+    return directory / name;
 }
 
 std::string sanitize_filename(std::string_view utf8) {
@@ -277,6 +305,7 @@ std::string usage() {
            "                 [--format wav|mp3|ogg] [--outfile <path>] [--outdir <folder>]\n"
            "                 [--title-as-filename] [--no-cover-art] [--quality 1|2|3]\n"
            "                 [--sample-package <path>] [--play] [--help]\n"
+           "       RenderOJN <input.ojm> --extract-samples [--outfile <path>] [--outdir <folder>]\n"
            "\nDefaults: difficulty h, tracks all, format mp3, quality 3.\n"
            "\n--tracks selects which notes to sound: keysounds are the playable lanes,\n"
            "background is the autoplay/BGM stream. All modes keep the same length.\n"
@@ -286,7 +315,9 @@ std::string usage() {
            "optional and follows --format). A folder input renders every .ojn in it,\n"
            "into <folder>/render unless --outdir is given.\n"
            "\nMP3 and Ogg carry the chart's title, artist and cover art; --no-cover-art\n"
-           "leaves the picture out.\n";
+           "leaves the picture out.\n"
+           "\n--extract-samples writes every sample in an .ojm to <input stem>.zip\n"
+           "instead of rendering, each named <id>_<stored name>.ogg or .wav.\n";
 }
 
 void collect_play_warnings(const Options& options, Diagnostics& diagnostics) {
@@ -298,6 +329,17 @@ void collect_play_warnings(const Options& options, Diagnostics& diagnostics) {
     if (!options.cover_art) diagnostics.warn("--no-cover-art is ignored by --play");
     if (options.quality_set) diagnostics.warn("--quality is ignored by --play");
     if (options.tracks != render::TrackSelection::All) diagnostics.warn("--tracks is ignored by --play; all notes are played");
+}
+
+void collect_extract_warnings(const Options& options, Diagnostics& diagnostics) {
+    if (!options.extract_samples) return;
+    if (options.difficulty != format::Difficulty::Hard) diagnostics.warn("--difficulty is ignored by --extract-samples");
+    if (options.tracks != render::TrackSelection::All) diagnostics.warn("--tracks is ignored by --extract-samples");
+    if (options.format_set) diagnostics.warn("--format is ignored by --extract-samples");
+    if (options.quality_set) diagnostics.warn("--quality is ignored by --extract-samples");
+    if (options.title_as_filename) diagnostics.warn("--title-as-filename is ignored by --extract-samples");
+    if (!options.cover_art) diagnostics.warn("--no-cover-art is ignored by --extract-samples");
+    if (options.sample_package) diagnostics.warn("--sample-package is ignored by --extract-samples; the input is the package");
 }
 
 } // namespace renderojn::app
